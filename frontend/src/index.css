@@ -1,0 +1,14 @@
+/* Global CSS — imports BPRForm variables */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Barlow', system-ui, sans-serif;
+  background: #F4F6FA;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Smooth scrolling for phase nav */
+html { scroll-behavior: smooth; }
+
+/* Prevent double-tap zoom on mobile buttons */
+button, a { touch-action: manipulation; }

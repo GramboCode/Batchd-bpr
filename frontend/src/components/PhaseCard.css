@@ -1,0 +1,246 @@
+/* ── PhaseCard.css ─────────────────────────────────────────────────────── */
+
+/* Card container */
+.phase-card {
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.phase-card.phase-active {
+  border-color: var(--punch-red);
+  box-shadow: 0 0 0 3px rgba(232,25,44,0.06);
+}
+.phase-card.phase-signed {
+  border-color: var(--green);
+}
+.phase-card.phase-signed.phase-active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(10,122,62,0.06);
+}
+
+/* ── PHASE HEADER ─────────────────────────────────────────────────────────── */
+.phase-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: none; border: none; cursor: pointer;
+  text-align: left; gap: 12px; transition: background 0.1s;
+}
+.phase-header:hover { background: var(--light); }
+
+.phase-header-left {
+  display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;
+}
+.phase-number {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 0.9rem; font-weight: 900;
+  background: var(--light); border: 2px solid var(--border2);
+  color: var(--text2);
+}
+.phase-number.num-signed {
+  background: var(--green); border-color: var(--green); color: #fff;
+  font-size: 0.8rem;
+}
+.phase-header-info { flex: 1; min-width: 0; }
+.phase-title {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.03em; color: var(--text);
+}
+.phase-signed-by {
+  font-size: 0.78rem; color: var(--green); margin-top: 2px;
+}
+.phase-progress-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px;
+}
+.phase-mini-track {
+  width: 80px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;
+}
+.phase-mini-fill {
+  height: 100%; background: var(--punch-red); border-radius: 2px; transition: width 0.3s;
+}
+.phase-step-count {
+  font-size: 0.72rem; color: var(--text3);
+  font-family: var(--font-display); font-weight: 700;
+}
+
+.phase-header-right {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.phase-status-chip {
+  font-family: var(--font-display); font-size: 0.65rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 4px;
+}
+.chip-ready {
+  background: rgba(10,122,62,0.12); color: var(--green);
+  border: 1px solid rgba(10,122,62,0.25);
+}
+.chip-progress {
+  background: var(--light); color: var(--text3);
+  border: 1px solid var(--border2);
+}
+.phase-chevron {
+  font-size: 0.65rem; color: var(--text3);
+}
+
+/* ── PHASE BODY ──────────────────────────────────────────────────────────── */
+.phase-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+
+/* ── NAME PROMPT ─────────────────────────────────────────────────────────── */
+.name-prompt {
+  position: absolute; inset: 0; z-index: 10;
+  background: rgba(255,255,255,0.96);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 0 0 10px 10px;
+}
+.name-prompt-inner {
+  padding: 24px; max-width: 340px; width: 100%;
+}
+.name-prompt-title {
+  font-family: var(--font-display); font-size: 1.1rem; font-weight: 800;
+  text-transform: uppercase; color: var(--text); margin-bottom: 6px;
+}
+.name-prompt-sub {
+  font-size: 0.82rem; color: var(--text2); line-height: 1.5; margin-bottom: 14px;
+}
+.name-input {
+  width: 100%; padding: 10px 13px; border: 1.5px solid var(--border2);
+  border-radius: 7px; font-size: 0.95rem; font-family: var(--font-body);
+  background: var(--white); color: var(--text); outline: none; margin-bottom: 12px;
+}
+.name-input:focus { border-color: var(--punch-red); }
+.name-prompt-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+
+/* ── EMPLOYEE ROW ────────────────────────────────────────────────────────── */
+.employee-row { padding: 12px 0; }
+.employee-set {
+  display: flex; align-items: center; gap: 9px;
+}
+.employee-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--punch-red); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 0.85rem; font-weight: 800;
+  flex-shrink: 0;
+}
+.employee-name {
+  font-size: 0.88rem; font-weight: 600; color: var(--text);
+}
+.name-unset-btn {
+  font-size: 0.82rem; color: var(--text3);
+  border-style: dashed !important;
+}
+
+/* ── STEPS LIST ──────────────────────────────────────────────────────────── */
+.steps-list { display: flex; flex-direction: column; gap: 2px; }
+
+.step-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 10px; border-radius: 6px; transition: background 0.1s;
+}
+.step-row:hover { background: var(--light); }
+.step-row.step-checked { opacity: 0.7; }
+.step-row.step-ccp { background: var(--amber-bg); border-left: 3px solid var(--amber); }
+.step-row.step-ccp:hover { background: #fef3c7; }
+.step-row.step-ccp.step-checked { background: rgba(251,243,199,0.4); }
+
+.step-checkbox {
+  width: 22px; height: 22px; flex-shrink: 0; border-radius: 5px;
+  border: 2px solid var(--border2); background: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 0.75rem; font-weight: 700;
+  color: var(--white); margin-top: 1px; transition: all 0.1s;
+}
+.step-checkbox:hover:not(:disabled) {
+  border-color: var(--punch-red);
+}
+.step-checkbox.cb-checked {
+  background: var(--green); border-color: var(--green);
+}
+.step-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.step-content { flex: 1; }
+.ccp-badge {
+  font-family: var(--font-display); font-size: 0.62rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--amber); margin-bottom: 3px;
+}
+.step-text { font-size: 0.88rem; line-height: 1.45; color: var(--text); }
+.step-checked-by {
+  font-size: 0.72rem; color: var(--text3); margin-top: 3px;
+}
+
+/* CCP input */
+.ccp-input-row { margin-top: 8px; }
+.ccp-input-label {
+  display: block; font-size: 0.72rem; font-weight: 700;
+  color: var(--amber); margin-bottom: 4px;
+  font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.ccp-input {
+  width: 100%; max-width: 280px; padding: 7px 11px;
+  border: 1.5px solid var(--amber); border-radius: 6px;
+  font-size: 0.88rem; font-family: var(--font-body);
+  background: #fffbf0; color: var(--text); outline: none;
+}
+.ccp-input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(180,83,9,0.1); }
+
+/* CCP recorded value (read-only after sign) */
+.ccp-recorded {
+  margin-top: 6px; display: flex; align-items: center; gap: 6px;
+  font-size: 0.8rem;
+}
+.ccp-recorded-label { color: var(--amber); font-weight: 700; }
+.ccp-recorded-value { color: var(--text); }
+
+/* ── NOTES ───────────────────────────────────────────────────────────────── */
+.notes-section { margin-top: 14px; }
+.notes-label {
+  display: block; font-family: var(--font-display); font-size: 0.72rem;
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text3); margin-bottom: 5px;
+}
+.required-star { color: var(--punch-red); margin-left: 2px; }
+.optional-tag  { color: var(--text3); font-weight: 400; margin-left: 4px;
+                  text-transform: none; letter-spacing: 0; }
+.notes-input {
+  width: 100%; padding: 9px 12px; border: 1.5px solid var(--border2);
+  border-radius: 7px; font-family: var(--font-body); font-size: 0.88rem;
+  color: var(--text); background: var(--white); outline: none; resize: vertical;
+}
+.notes-input:focus { border-color: var(--punch-red); }
+
+.signed-notes { margin-top: 10px; padding: 10px 12px; background: var(--light);
+                 border-radius: 6px; }
+.signed-notes-label {
+  font-family: var(--font-display); font-size: 0.65rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 4px;
+}
+.signed-notes-text { font-size: 0.85rem; color: var(--text2); line-height: 1.5; }
+
+/* ── SIGN-OFF ─────────────────────────────────────────────────────────────── */
+.signoff-section { margin-top: 16px; }
+.signoff-hint {
+  font-size: 0.78rem; color: var(--text3); margin-bottom: 8px; text-align: center;
+}
+.ccp-hint { color: var(--amber); }
+
+.btn-signoff {
+  width: 100%; padding: 13px; border: none; border-radius: 8px;
+  font-family: var(--font-display); font-size: 0.95rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer;
+  background: var(--border); color: var(--text3); transition: all 0.15s;
+}
+.btn-signoff:disabled { cursor: not-allowed; }
+.btn-signoff.btn-signoff-ready {
+  background: var(--punch-red); color: #fff;
+  box-shadow: 0 2px 8px rgba(232,25,44,0.25);
+}
+.btn-signoff.btn-signoff-ready:hover { background: var(--punch-rdk); }

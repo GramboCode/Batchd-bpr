@@ -1,0 +1,199 @@
+/* ── BPRForm.css ─────────────────────────────────────────────────────────── */
+
+:root {
+  --punch-red:    #E8192C;
+  --punch-rdk:    #C01020;
+  --dark:         #1A1D2E;
+  --mid:          #4A5068;
+  --light:        #F4F6FA;
+  --border:       #E2E6EF;
+  --border2:      #D0D5E3;
+  --white:        #FFFFFF;
+  --green:        #0A7A3E;
+  --green-bg:     #ECFDF3;
+  --amber:        #B45309;
+  --amber-bg:     #FFFBEB;
+  --blue:         #1A56DB;
+  --text:         #0F1117;
+  --text2:        #4A5068;
+  --text3:        #8890A8;
+
+  --font-display: 'Barlow Condensed', system-ui, sans-serif;
+  --font-body:    'Barlow', system-ui, sans-serif;
+  --font-mono:    'Courier New', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--font-body);
+  background: var(--light);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.bpr-app { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ── HEADER ──────────────────────────────────────────────────────────────── */
+.bpr-header {
+  background: var(--dark);
+  position: sticky; top: 0; z-index: 100;
+}
+.bpr-header-inner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; flex-wrap: wrap;
+}
+.bpr-brand {
+  display: flex; align-items: baseline; gap: 0; flex-shrink: 0;
+}
+.brand-punch {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  color: var(--punch-red); text-transform: uppercase; letter-spacing: 0.04em;
+  background: rgba(232,25,44,0.12); padding: 4px 10px 3px;
+  border-radius: 5px 0 0 5px;
+}
+.brand-bpr {
+  font-family: var(--font-display); font-size: 0.75rem; font-weight: 700;
+  color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.12em;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  border-left: none; padding: 5px 8px 4px; border-radius: 0 5px 5px 0;
+}
+.bpr-batch-info {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+}
+.batch-name {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 800;
+  color: #fff; text-transform: uppercase; letter-spacing: 0.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-id {
+  font-family: var(--font-mono); font-size: 0.72rem; color: rgba(255,255,255,0.45);
+  margin-top: 1px;
+}
+.bpr-progress-pill {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.progress-label {
+  font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
+  color: rgba(255,255,255,0.6);
+}
+.progress-track {
+  width: 80px; height: 4px; background: rgba(255,255,255,0.15);
+  border-radius: 2px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: var(--punch-red);
+  border-radius: 2px; transition: width 0.4s ease;
+}
+
+/* context strip */
+.batch-context-strip {
+  display: flex; gap: 0; border-top: 1px solid rgba(255,255,255,0.08);
+  overflow-x: auto; scrollbar-width: none;
+}
+.batch-context-strip::-webkit-scrollbar { display: none; }
+.context-item {
+  display: flex; flex-direction: column; padding: 7px 14px;
+  border-right: 1px solid rgba(255,255,255,0.08); flex-shrink: 0;
+}
+.context-label {
+  font-family: var(--font-display); font-size: 0.62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.3);
+}
+.context-value {
+  font-family: var(--font-body); font-size: 0.82rem;
+  color: rgba(255,255,255,0.75); margin-top: 1px;
+}
+.context-value.uid {
+  font-family: var(--font-mono); font-size: 0.7rem;
+  color: rgba(255,255,255,0.5);
+}
+.context-value.status {
+  font-family: var(--font-display); font-weight: 700; font-size: 0.78rem;
+  color: var(--green); letter-spacing: 0.04em;
+}
+
+/* ── PHASE NAV ────────────────────────────────────────────────────────────── */
+.phase-nav {
+  background: var(--white); border-bottom: 1.5px solid var(--border);
+  overflow-x: auto; scrollbar-width: none;
+}
+.phase-nav::-webkit-scrollbar { display: none; }
+.phase-nav-inner {
+  display: flex; gap: 0; padding: 0 8px; min-width: max-content;
+}
+.phase-nav-btn {
+  display: flex; align-items: center; gap: 6px; padding: 10px 14px;
+  background: none; border: none; border-bottom: 2.5px solid transparent;
+  cursor: pointer; font-family: var(--font-display); font-size: 0.78rem;
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text3); white-space: nowrap; transition: all 0.12s;
+}
+.phase-nav-btn:hover { color: var(--text); border-bottom-color: var(--border2); }
+.phase-nav-btn.active { color: var(--punch-red); border-bottom-color: var(--punch-red); }
+.phase-nav-btn.signed { color: var(--green); }
+.phase-nav-btn.signed.active { border-bottom-color: var(--green); }
+.phase-nav-num {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 800;
+  background: var(--light); border: 1.5px solid var(--border2);
+  color: var(--text2); flex-shrink: 0;
+}
+.phase-nav-btn.active .phase-nav-num  { background: var(--punch-red); border-color: var(--punch-red); color: #fff; }
+.phase-nav-btn.signed .phase-nav-num  { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* ── MAIN ─────────────────────────────────────────────────────────────────── */
+.bpr-main {
+  flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  max-width: 860px; width: 100%; margin: 0 auto;
+}
+
+/* ── RELEASE BANNER ──────────────────────────────────────────────────────── */
+.release-banner {
+  background: var(--green-bg); border: 1.5px solid var(--green);
+  border-radius: 10px; padding: 18px 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.release-banner-icon {
+  font-size: 1.8rem; flex-shrink: 0;
+}
+.release-banner-text { flex: 1; min-width: 200px; }
+.release-banner-title {
+  font-family: var(--font-display); font-size: 1.1rem; font-weight: 800;
+  text-transform: uppercase; color: var(--green); letter-spacing: 0.03em;
+}
+.release-banner-sub { font-size: 0.85rem; color: var(--text2); margin-top: 3px; }
+.btn-release {
+  font-family: var(--font-display); font-size: 0.9rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--green); color: #fff; border: none;
+  padding: 11px 20px; border-radius: 7px; cursor: pointer;
+  transition: all 0.12s; flex-shrink: 0;
+}
+.btn-release:hover { background: #075e30; }
+
+/* ── BUTTONS ──────────────────────────────────────────────────────────────── */
+.btn { cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+       border: none; border-radius: 6px; font-family: var(--font-body);
+       transition: all 0.12s; }
+.btn-primary-sm {
+  background: var(--punch-red); color: #fff; font-size: 0.88rem; font-weight: 600;
+  padding: 9px 16px;
+}
+.btn-primary-sm:hover { background: var(--punch-rdk); }
+.btn-primary-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ghost-sm {
+  background: var(--light); color: var(--text2); font-size: 0.82rem;
+  border: 1.5px solid var(--border2); padding: 7px 13px;
+}
+.btn-ghost-sm:hover { background: var(--border); }
+.btn-text-sm {
+  background: none; border: none; color: var(--blue);
+  font-size: 0.78rem; cursor: pointer; padding: 0 4px;
+}
+.btn-text-sm:hover { text-decoration: underline; }
+
+/* ── PHASE CARD.CSS ───────────────────────────────────────────────────────── */
