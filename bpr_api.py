@@ -377,11 +377,33 @@ def phase_signoff(uid: str, req: PhaseSignoffRequest):
             cur.execute("UPDATE bpr_records SET updated_at = %s WHERE uid = %s",
                         (now_utc(), uid))
         conn.commit()
+        # ── Write phase data back to Google Sheet BPR ────────────
+        # Get step checks for this phase to include in write-back
+        with conn.cursor() as cur2:
+            cur2.execute("""
+                SELECT * FROM bpr_step_checks 
+                WHERE bpr_id = %s AND phase_id = %s
+                ORDER BY step_index
+            """, (rec["id"], req.phase_id))
+            phase_steps = [dict(r) for r in cur2.fetchall()]
+
+        # Fire and forget — non-blocking, non-fatal
+        import asyncio
+        asyncio.create_task(push_phase_to_gas_bpr(
+            uid          = uid,
+            phase_id     = req.phase_id,
+            phase_def    = phase_def,
+            signoff      = signoff,
+            steps        = phase_steps,
+            product_family = rec["product_family"]
+        ))
+
         return {
             "success": True,
             "signoff": signoff,
             "message": f"Phase '{phase_def['name']}' signed off by {req.employee_name}"
         }
+
     finally:
         conn.close()
 
@@ -808,6 +830,160 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
             })
     except Exception as e:
         print(f"GAS webhook ping failed (non-fatal): {e}")
+
+async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict, 
+                                  signoff: dict, steps: list, product_family: str):
+    """
+    Builds the named-range field map from a completed phase signoff
+    and POSTs it to GAS serverWriteBPRFields.
+    Only handles live_rosin for now — extend per product family.
+    """
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
+        print("No GAS_WEBHOOK_URL — skipping BPR write-back")
+        return
+
+    if product_family != "live_rosin":
+        print(f"BPR write-back not yet implemented for {product_family} — skipping")
+        return
+
+    # Build step map for this phase: step_index -> {checked_by, checked_at}
+    step_map = {}
+    for s in steps:
+        if s["phase_id"] == phase_id:
+            step_map[s["step_index"]] = s
+
+    # CCP-only mapping: (phase_id, step_index) -> Section 4 sheet row number (1-21)
+    # Verified against actual BPR sheet Step Description column
+    LIVE_ROSIN_CCP_ROW_MAP = {
+        # Row 1  — Verify washers/bags/trays cleaned (pre_production step 2 = equipment clean)
+        ("pre_production", 2):  1,
+        # Row 2  — Verify fresh frozen COA, record METRC UID, strain, input weight
+        ("pre_production", 1):  2,
+        # Row 3  — Tea bags at 4,000g wet weight on certified scale
+        ("ice_water_wash", 0):  3,
+        # Row 4  — Load washers with ice and water
+        ("ice_water_wash", 1):  4,
+        # Row 5  — Run 2 full wash cycles, record start/end times
+        ("ice_water_wash", 2):  5,
+        # Row 6  — Drain water, collect hash on tray
+        ("ice_water_wash", 3):  6,
+        # Row 7  — Record WET WEIGHT of hash on tray
+        ("ice_water_wash", 6):  7,
+        # Row 8  — Cannabis by-product in waste receptacle, record in Waste Log
+        ("ice_water_wash", 9):  8,
+        # Row 9  — Check pump oil, insert trays into freeze dryer ≤35°F
+        ("freeze_drying",  3):  9,
+        # Row 10 — Inspect periodically, break up thick portions
+        ("freeze_drying",  4): 10,
+        # Row 11 — Sift dried hash, record DRY SIFT WEIGHT
+        ("freeze_drying",  6): 11,
+        # Row 12 — Open valve, defrost, vacuum seal, store in freezer
+        ("freeze_drying",  7): 12,
+        # Row 13 — No CCP marker (mold hash into rectangles) — skip
+        # Row 14 — Preheat rosin press to 162°F
+        ("pressing",       2): 14,
+        # Row 15 — Press with foot trigger
+        ("pressing",       3): 15,
+        # Row 16 — Weigh rosin yield, record press waste
+        ("pressing",       6): 16,
+        # Row 17 — Wipe CR jars, calibrate scale, weigh 1.0–1.05g per jar
+        ("packaging",      1): 17,
+        # Row 18 — No CCP (apply CR cap) — skip
+        # Row 19 — Apply required info sticker, all 5 fields, supervisor approval
+        ("packaging",      4): 19,
+        # Row 20 — No CCP (post-production clean-down) — skip
+        # Row 21 — METRC manufacturing activity entry within 24 hours
+        ("sanitation",     6): 21,
+    }
+
+    fields = {}
+    signed_at = fmt_ts(signoff.get("signed_at")) or ""
+    employee  = signoff.get("employee_name") or ""
+
+    # Parse CCP values once
+    ccp_values = signoff.get("ccp_values") or {}
+    if isinstance(ccp_values, str):
+        try: ccp_values = json.loads(ccp_values)
+        except: ccp_values = {}
+
+    # Write only CCP steps to Section 4 named ranges
+    for (p_id, step_idx), sheet_row in LIVE_ROSIN_CCP_ROW_MAP.items():
+        if p_id != phase_id:
+            continue  # only process rows belonging to current phase
+
+        val = ccp_values.get(str(step_idx)) or ccp_values.get(step_idx) or ""
+        prefix = f"ROSIN_S4_STEP{sheet_row}"
+
+        step_data = step_map.get(step_idx, {})
+        checked_at = fmt_ts(step_data.get("checked_at")) if step_data.get("checked_at") else signed_at
+        checked_by = step_data.get("checked_by") or employee
+
+        fields[prefix + "_DATE"]     = checked_at[:10] if checked_at else ""
+        fields[prefix + "_OP1"]      = checked_by
+        fields[prefix + "_VERIFIED"] = "✓" if step_data.get("checked") else ""
+        fields[prefix + "_VALUE"]    = val
+        fields[prefix + "_PASSFAIL"] = "Pass" if val else ""
+
+    # Section 5 — yield fields
+    if phase_id == "qc_yield":
+        fields["ROSIN_S5_YIELD_ACTUAL"]  = ccp_values.get("4") or ccp_values.get(4) or ""
+        fields["ROSIN_S5_INITIALS"]      = employee
+        fields["ROSIN_S5_TIME_RECORDED"] = signed_at
+
+    if phase_id == "packaging":
+        fields["ROSIN_S5_LABEL_COUNT"] = ccp_values.get("6") or ccp_values.get(6) or ""
+
+    # Section 6 CCP monitoring rows — verified against sheet CCP list
+    PHASE_CCP_MAP = {
+        "ice_water_wash": {
+            0: 1,   # Tea bag fill weight → CCP 1
+            2: 3,   # Wash cycles completed → CCP 3
+            6: 4,   # Wet weight recorded → CCP 4
+            9: 5,   # Cannabis waste logged → CCP 5
+        },
+        "freeze_drying": {
+            3: 6,   # Freeze dryer temp ≤35°F → CCP 6
+            3: 7,   # Pump oil level checked → CCP 7
+            6: 8,   # Dry sift weight recorded → CCP 8
+        },
+        "pressing": {
+            2: 9,   # Rosin press temp → CCP 9
+            6: 10,  # Rosin yield weight → CCP 10
+            6: 11,  # Press waste logged → CCP 11
+        },
+        "packaging": {
+            1: 12,  # Jar fill weight spot-check → CCP 12
+            4: 13,  # Label all 5 fields → CCP 13
+        },
+        "pre_production": {
+            2: 2,   # RO water confirmed → CCP 2
+        },
+    }
+
+    phase_ccp_map = PHASE_CCP_MAP.get(phase_id, {})
+    for step_idx, ccp_row in phase_ccp_map.items():
+        val = ccp_values.get(str(step_idx)) or ccp_values.get(step_idx) or ""
+        prefix = f"ROSIN_S6_CCP{ccp_row}"
+        fields[prefix + "_ACTUAL"]   = val
+        fields[prefix + "_TIME"]     = signed_at
+        fields[prefix + "_PASSFAIL"] = "Pass" if val else ""
+        fields[prefix + "_OP"]       = employee
+
+    if not fields:
+        print(f"push_phase_to_gas_bpr: no fields to write for phase {phase_id}")
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(webhook_url, json={
+                "action": "writeBPRFields",
+                "uid":    uid,
+                "fields": fields
+            })
+            print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
+    except Exception as e:
+        print(f"GAS BPR write-back failed (non-fatal): {e}")
 
 
 # Health check is defined at the top of this file above all /bpr/{uid} routes
