@@ -144,7 +144,7 @@ BPR_PHASES = {
   # GUMMIES (also covers Asteroids, Fruit Snacks)
   # ─────────────────────────────────────────────────────────────────
   "gummies": {
-    "label": "Gummies / Fruit Snacks",
+    "label": "Gummies",
     "sop_ref": "P007 / P003 / MMP-MASTER-001",
     "uom": "units",
     "phases": [
@@ -171,12 +171,12 @@ BPR_PHASES = {
         "id": "ingredient_prep",
         "name": "Ingredient Prep & Weighing",
         "steps": [
-          "Weigh Apple Juice Concentrate on calibrated scale — record weight",
+          "Weigh *Sugar* on calibrated scale — record weight",
           "Weigh Corn Syrup — record weight",
           "Weigh Sugar — record weight",
           "Weigh Modified Cornstarch and Cornstarch — record combined weight",
           "Weigh Water for Agar — record weight",
-          "Weigh Agar Agar — soak in water for minimum 10 minutes before cooking",
+          "Weigh Gelatin — NOPE soak in water for minimum 10 minutes before cooking",
           "Weigh Citric Acid — record weight",
           "Weigh THC Distillate on precision scale (.001g) — record weight",
           "Weigh Flavoring — record weight",
@@ -206,7 +206,7 @@ BPR_PHASES = {
           "Add remaining color — confirm final color consistency",
         ],
         "ccps": [6, 7],
-        "ccp_labels": {6: "Temperature before Agar (°F) — must be 200–250°F", 7: "Temperature confirmed below 250°F (yes/no)"},
+        "ccp_labels": {6: "Temperature before Gelatin (°F) — must be 200–250°F", 7: "Temperature confirmed below 250°F (yes/no)"},
         "notes_required": False,
       },
       {
@@ -298,7 +298,7 @@ BPR_PHASES = {
   # ─────────────────────────────────────────────────────────────────
   "vapes": {
     "label": "Vape Cartridges / AIO (Distillate & Live Rosin)",
-    "sop_ref": "P007 / MMP-MASTER-001",
+    "sop_ref": "P007 / MMP-DVP-001",
     "uom": "units",
     "phases": [
       {
