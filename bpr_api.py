@@ -435,7 +435,7 @@ def get_phases(family: str):
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/create")
 def create_bpr(req: BPRCreateRequest):
-    family = detect_product_family(req.product_name, req.category or "")
+    family = detect_product_family(req.product_name, req.category or "", req.bpr_type or "")
     if not family:
         raise HTTPException(400, f"Could not detect product family for: {req.product_name}")
 
@@ -565,13 +565,6 @@ def update_step(uid: str, req: StepCheckRequest):
         conn.close()
 
 
-@app.post("/bpr/create")
-def create_bpr(req: BPRCreateRequest):
-    family = detect_product_family(req.product_name, req.category or "", req.bpr_type or "")
-    if not family:
-        raise HTTPException(400, f"Could not detect product family for: {req.product_name}")
-    ...
-    
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/{uid}/phase/signoff
 # Sign off an entire phase — requires all non-CCP steps checked,
