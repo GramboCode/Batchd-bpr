@@ -97,6 +97,45 @@ CREATE TABLE IF NOT EXISTS bpr_step_checks (
 CREATE INDEX IF NOT EXISTS idx_bpr_uid ON bpr_records(uid);
 CREATE INDEX IF NOT EXISTS idx_signoffs_bpr ON bpr_phase_signoffs(bpr_id);
 CREATE INDEX IF NOT EXISTS idx_steps_bpr_phase ON bpr_step_checks(bpr_id, phase_id);
+
+CREATE TABLE IF NOT EXISTS hash_lots (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id      TEXT NOT NULL UNIQUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    wash_bpr_id      UUID REFERENCES bpr_records(id),
+    primary_strain   TEXT,
+    is_mixed         BOOLEAN DEFAULT FALSE,
+    wet_weight_g     NUMERIC,
+    dry_weight_g     NUMERIC,
+    sift_weight_g    NUMERIC,
+    yield_pct        NUMERIC,
+    status           TEXT DEFAULT 'drying',
+    storage_location TEXT,
+    notes            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_inputs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id      TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    fresh_frozen_uid TEXT NOT NULL,
+    strain_name      TEXT,
+    input_weight_g   NUMERIC,
+    added_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_usage (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id      TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    press_bpr_id     UUID REFERENCES bpr_records(id),
+    press_metrc_uid  TEXT,
+    weight_used_g    NUMERIC,
+    used_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hash_lots_status ON hash_lots(status);
+CREATE INDEX IF NOT EXISTS idx_hash_inputs_lot  ON hash_lot_inputs(hash_lot_id);
+CREATE INDEX IF NOT EXISTS idx_hash_usage_lot   ON hash_lot_usage(hash_lot_id);
+CREATE INDEX IF NOT EXISTS idx_hash_usage_press ON hash_lot_usage(press_bpr_id);
 """
 
 @app.on_event("startup")
@@ -146,6 +185,230 @@ def fmt_ts(ts):
     if isinstance(ts, str):
         return ts
     return ts.strftime("%-m/%-d/%Y %-I:%M %p")
+
+# ── Hash lot Pydantic models ──────────────────────────────────────
+class HashLotInput(BaseModel):
+    fresh_frozen_uid: str
+    strain_name: Optional[str] = None
+    input_weight_g: Optional[float] = None
+
+class HashLotCreateRequest(BaseModel):
+    wash_bpr_id: Optional[str] = None
+    primary_strain: str
+    is_mixed: bool = False
+    wet_weight_g: Optional[float] = None
+    inputs: List[HashLotInput]
+
+class HashLotWeightsRequest(BaseModel):
+    dry_weight_g: Optional[float] = None
+    sift_weight_g: Optional[float] = None
+    storage_location: Optional[str] = None
+    notes: Optional[str] = None
+
+class HashLotStatusRequest(BaseModel):
+    status: str
+    press_bpr_id: Optional[str] = None
+    press_metrc_uid: Optional[str] = None
+    weight_used_g: Optional[float] = None
+
+
+# ── Hash lot ID generator ─────────────────────────────────────────
+def generate_hash_lot_id(strain_name: str, is_mixed: bool, conn) -> str:
+    from datetime import date
+    import re
+    today = date.today()
+    mmdd  = today.strftime("%m%d")
+
+    if is_mixed:
+        strain_code = "MIXED"
+    else:
+        clean = re.sub(r'[^A-Z0-9]', '', strain_name.upper())
+        strain_code = clean[:6] if clean else "UNKNWN"
+
+    prefix = f"HASH-{strain_code}-{mmdd}"
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM hash_lots WHERE hash_lot_id LIKE %s",
+            (f"{prefix}-%",)
+        )
+        count = cur.fetchone()["cnt"]
+
+    seq = str(count + 1).zfill(2)
+    return f"{prefix}-{seq}"
+
+
+# ── POST /hash/create ─────────────────────────────────────────────
+@app.post("/hash/create")
+def create_hash_lot(req: HashLotCreateRequest):
+    conn = get_db()
+    try:
+        hash_lot_id = generate_hash_lot_id(req.primary_strain, req.is_mixed, conn)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO hash_lots
+                    (hash_lot_id, wash_bpr_id, primary_strain, is_mixed, wet_weight_g)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING *
+            """, (hash_lot_id, req.wash_bpr_id, req.primary_strain,
+                  req.is_mixed, req.wet_weight_g))
+            lot = dict(cur.fetchone())
+
+            for inp in req.inputs:
+                cur.execute("""
+                    INSERT INTO hash_lot_inputs
+                        (hash_lot_id, fresh_frozen_uid, strain_name, input_weight_g)
+                    VALUES (%s, %s, %s, %s)
+                """, (hash_lot_id, inp.fresh_frozen_uid,
+                      inp.strain_name, inp.input_weight_g))
+        conn.commit()
+        return {
+            "hash_lot_id": hash_lot_id,
+            "lot": lot,
+            "message": f"Hash lot created: {hash_lot_id}. Write this on the vacuum seal bag."
+        }
+    finally:
+        conn.close()
+
+
+# ── GET /hash/available ───────────────────────────────────────────
+@app.get("/hash/available")
+def get_available_hash_lots():
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT h.*,
+                    json_agg(json_build_object(
+                        'fresh_frozen_uid', i.fresh_frozen_uid,
+                        'strain_name',      i.strain_name,
+                        'input_weight_g',   i.input_weight_g
+                    )) as inputs
+                FROM hash_lots h
+                LEFT JOIN hash_lot_inputs i ON i.hash_lot_id = h.hash_lot_id
+                WHERE h.status = 'available'
+                GROUP BY h.id
+                ORDER BY h.created_at DESC
+            """)
+            lots = [dict(r) for r in cur.fetchall()]
+        return {"lots": lots, "count": len(lots)}
+    finally:
+        conn.close()
+
+
+# ── GET /hash/{hash_lot_id} ───────────────────────────────────────
+# NOTE: This must come AFTER /hash/available to avoid route conflict
+@app.get("/hash/{hash_lot_id}")
+def get_hash_lot(hash_lot_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,)
+            )
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            lot = dict(lot)
+
+            cur.execute(
+                "SELECT * FROM hash_lot_inputs WHERE hash_lot_id = %s", (hash_lot_id,)
+            )
+            inputs = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                "SELECT * FROM hash_lot_usage WHERE hash_lot_id = %s ORDER BY used_at",
+                (hash_lot_id,)
+            )
+            usage = [dict(r) for r in cur.fetchall()]
+
+        return {
+            "lot": lot,
+            "inputs": inputs,
+            "usage": usage,
+            "traceability": {
+                "fresh_frozen_uids": [i["fresh_frozen_uid"] for i in inputs],
+                "total_input_weight_g": sum(i["input_weight_g"] or 0 for i in inputs),
+            }
+        }
+    finally:
+        conn.close()
+
+
+# ── PATCH /hash/{hash_lot_id}/weights ────────────────────────────
+@app.patch("/hash/{hash_lot_id}/weights")
+def update_hash_weights(hash_lot_id: str, req: HashLotWeightsRequest):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,)
+            )
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+
+            yield_pct = None
+            wet  = lot["wet_weight_g"]
+            sift = req.sift_weight_g
+            if wet and sift and wet > 0:
+                yield_pct = round((sift / wet) * 100, 2)
+
+            cur.execute("""
+                UPDATE hash_lots SET
+                    dry_weight_g     = COALESCE(%s, dry_weight_g),
+                    sift_weight_g    = COALESCE(%s, sift_weight_g),
+                    yield_pct        = COALESCE(%s, yield_pct),
+                    storage_location = COALESCE(%s, storage_location),
+                    notes            = COALESCE(%s, notes),
+                    status           = 'available'
+                WHERE hash_lot_id = %s
+                RETURNING *
+            """, (req.dry_weight_g, req.sift_weight_g, yield_pct,
+                  req.storage_location, req.notes, hash_lot_id))
+            updated = dict(cur.fetchone())
+        conn.commit()
+        return {
+            "lot": updated,
+            "yield_pct": yield_pct,
+            "message": f"{hash_lot_id} updated — status set to available"
+        }
+    finally:
+        conn.close()
+
+
+# ── PATCH /hash/{hash_lot_id}/status ─────────────────────────────
+@app.patch("/hash/{hash_lot_id}/status")
+def update_hash_status(hash_lot_id: str, req: HashLotStatusRequest):
+    valid = {"available", "in_use", "depleted", "drying"}
+    if req.status not in valid:
+        raise HTTPException(400, f"Invalid status. Must be one of: {valid}")
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE hash_lots SET status = %s WHERE hash_lot_id = %s RETURNING *",
+                (req.status, hash_lot_id)
+            )
+            updated = cur.fetchone()
+            if not updated:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+
+            if req.status == "in_use" and req.press_bpr_id:
+                cur.execute("""
+                    INSERT INTO hash_lot_usage
+                        (hash_lot_id, press_bpr_id, press_metrc_uid, weight_used_g)
+                    VALUES (%s, %s, %s, %s)
+                """, (hash_lot_id, req.press_bpr_id,
+                      req.press_metrc_uid, req.weight_used_g))
+        conn.commit()
+        return {
+            "lot": dict(updated),
+            "message": f"{hash_lot_id} status → {req.status}"
+        }
+    finally:
+        conn.close()
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/phases

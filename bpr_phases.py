@@ -2092,58 +2092,389 @@ BPR_PHASES = {
         "notes_required": False,
       },
     ]
-  },
-}
+  },   # ← closes "bho_badder"
+
+  # ─────────────────────────────────────────────────────────────────
+  # ROSIN WASH
+  # ─────────────────────────────────────────────────────────────────
+  "rosin_wash": {
+    "label": "Live Rosin — Ice Water Wash / Freeze Dry / Sift",
+    "sop_ref": "MMP-LRS-001 v1.0",
+    "uom": "grams",
+    "input_type": "fresh_frozen",
+    "output_type": "hash_lot",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "Verify all fresh frozen METRC UIDs recorded on BPR Section 2 before starting",
+          "Confirm all input materials are frozen solid — do not allow to thaw",
+          "Verify all equipment clean, sanitized, dry: washers, bubble bags, trays, tools",
+          "Inspect bubble bags — replace if torn, holes, or worn mesh",
+          "Confirm freeze dryer pre-cooled — verify pump oil level",
+          "Confirm work area temperature is cold — minimize warm exposure time",
+          "Gloves on — maintain throughout all wash stages",
+          "Complete allergen pre-run clearance check",
+        ],
+        "ccps": [],
+        "ccp_labels": {},
+        "ccp_specs": {},
+        "corrective_actions": {},
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "ice_water_wash",
+        "name": "Ice Water Wash",
+        "steps": [
+          "Fill tea bags with 4,000g wet material each on certified scale — keep frozen until loading",
+          "Record wet weight per tea bag — enter on BPR",
+          "Load washers: 3 buckets ice → add 3-4 tea bags → 3 more buckets ice → fill with RO water (NOT tap) until bags submerged",
+          "Run 2 full wash cycles — record start and end time for each cycle",
+          "Drain wash water through bubble bags — agitate to separate plant matter from hash resin",
+          "Collect hash on clean tray using sterile spoon",
+          "Record total WET WEIGHT of hash on tray immediately after collection",
+          "Place cannabis by-product in locking waste receptacle — record in Waste Management Log",
+          "For multi-strain washes: label each collection tray with strain name before mixing",
+        ],
+        "ccps": [0, 1, 6],
+        "ccp_labels": {
+          0: "Tea bag fill weight (g) — target 4,000g per bag ±50g",
+          1: "RO water confirmed (not tap water) — yes/no",
+          6: "Wet hash weight on tray (g) — record before freeze dryer",
+        },
+        "ccp_specs": {
+          0: {"unit": "g",       "min": 3950, "max": 4050},
+          1: {"unit": "boolean", "min": 1,    "max": 1},
+          6: {"unit": "g",       "min": 1,    "max": 99999},
+        },
+        "corrective_actions": {
+          0: "Short of 3,950g: top up. Over 4,050g: remove excess.",
+          1: "Tap water confirmed: STOP. Drain and restart with RO water. Log deviation.",
+          6: "Record actual. Significantly below expected: investigate bag integrity.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "freeze_drying",
+        "name": "Freeze Drying",
+        "steps": [
+          "Load hash trays into freeze dryer immediately after collection — minimize air exposure",
+          "Check pump oil level — refill if low before starting",
+          "Turn on vacuum pump — record start time",
+          "Set drying time appropriate to water content and tray weight",
+          "Check periodically — break up thick portions of hash as they dry",
+          "Verify fully dry: powdery texture, no moisture clumps, no wet spots",
+          "Open valve before Defrost — let water drain completely. Press Defrost.",
+          "Remove dried hash from freeze dryer — record dry weight immediately",
+        ],
+        "ccps": [1, 7],
+        "ccp_labels": {
+          1: "Pump oil level checked — ok/refilled",
+          7: "Dry hash weight after freeze drying (g)",
+        },
+        "ccp_specs": {
+          1: {"unit": "boolean", "min": 1,    "max": 1},
+          7: {"unit": "g",       "min": 1,    "max": 99999},
+        },
+        "corrective_actions": {
+          1: "Oil low: refill before running. Running with low oil risks pump damage.",
+          7: "Record actual. Log if yield seems abnormally low.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "sifting",
+        "name": "Sifting & Yield Verification",
+        "steps": [
+          "Sift dried hash through appropriate screen to remove plant material and large particles",
+          "Record SIFT WEIGHT — this is the final usable hash weight",
+          "Calculate yield: sift weight ÷ wet weight × 100 — record yield %",
+          "Inspect hash quality: color, texture, absence of contamination",
+          "Vacuum seal sifted hash in labeled plastic bag",
+          "Label bag with: hash lot ID, strain(s), sift weight, wash date",
+          "Place in freezer — record storage location on BPR",
+          "Update hash lot status to 'available' in BPR app",
+        ],
+        "ccps": [0, 1, 4],
+        "ccp_labels": {
+          0: "Sift weight / final usable hash weight (g)",
+          1: "Yield % — sift ÷ wet × 100",
+          4: "Storage location confirmed (freezer + shelf)",
+        },
+        "ccp_specs": {
+          0: {"unit": "g",  "min": 1,   "max": 99999},
+          1: {"unit": "%",  "min": 0.5, "max": 25},
+          4: {"unit": "boolean", "min": 1, "max": 1},
+        },
+        "corrective_actions": {
+          0: "Record actual. If near zero: investigate freeze dryer run and bag integrity.",
+          1: "Outside 0.5-25%: investigate. Very low yield may indicate equipment issue.",
+          4: "Must be labeled and stored before BPR sign-off.",
+        },
+        "notes_required": True,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Flush washers with hot water — ISO-alcohol or chlorine sanitizer EOD",
+          "Clean bubble bags with RO water — air dry completely",
+          "Clean freeze dryer trays with ISO-alcohol — inspect for residue",
+          "Clean all collection trays and tools with ISO-alcohol",
+          "Wipe all tabletop surfaces with 70-99% ISO-alcohol",
+          "Record cleaning log: date, equipment, method, PPM, initials (Section 5)",
+          "ISO-alcohol wipe washing machines between strains — prevent cross-contamination",
+        ],
+        "ccps": [],
+        "ccp_labels": {},
+        "ccp_specs": {},
+        "corrective_actions": {},
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+    ],
+  },  # ← closes "rosin_wash"
+
+  # ─────────────────────────────────────────────────────────────────
+  # ROSIN PRESS
+  # ─────────────────────────────────────────────────────────────────
+  "rosin_press": {
+    "label": "Live Rosin — Press / Cure (Badder) / Package",
+    "sop_ref": "MMP-LRS-001 v1.0",
+    "uom": "grams",
+    "input_type": "hash_lot",
+    "output_type": "metrc_uid",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "Verify hash lot ID(s) recorded on BPR Section 2 before starting",
+          "Confirm hash lot status is 'available' — not already in use by another batch",
+          "Pull hash from freezer — record weight of each hash lot being used",
+          "Verify all equipment clean: rosin presses, plates, tools, parchment",
+          "Preheat rosin press #1 to 162°F — verify with thermometer before pressing",
+          "Preheat rosin press #2 to 162°F if using dual press — verify temp",
+          "Confirm parchment supply is sufficient for batch",
+          "Gloves on — maintain throughout",
+        ],
+        "ccps": [4, 5],
+        "ccp_labels": {
+          4: "Rosin press #1 temp (°F) — must be 162°F before first press",
+          5: "Rosin press #2 temp (°F) — if using, must be 162°F",
+        },
+        "ccp_specs": {
+          4: {"unit": "F", "min": 158, "max": 166},
+          5: {"unit": "F", "min": 158, "max": 166},
+        },
+        "corrective_actions": {
+          4: "Below 158°F: wait and re-verify. Do not press until at temp.",
+          5: "Same as press #1. If not reaching temp: use single press, document.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "pressing",
+        "name": "Rosin Pressing",
+        "steps": [
+          "Remove hash from freezer — mold into 5-6g rectangles immediately",
+          "Place each rectangle into mesh screen — fold ends to secure",
+          "Set parchment on press platform and beneath",
+          "Press with foot trigger — allow rosin to run through sides completely",
+          "Record yield weight per press on parchment — do not combine until weighed",
+          "Freeze pressed hash squares (Jar Tech material) — label for later use",
+          "Collect all rosin from parchment — record total rosin yield weight",
+          "Place press waste in locking waste receptacle — record in Waste Management Log",
+          "Clean press plates with ISO-alcohol between strain changes",
+        ],
+        "ccps": [5, 6, 7],
+        "ccp_labels": {
+          5: "Press temp confirmed at start of run (°F)",
+          6: "Total rosin yield weight (g)",
+          7: "Press waste weight (g) — for Waste Management Log",
+        },
+        "ccp_specs": {
+          5: {"unit": "F", "min": 158, "max": 166},
+          6: {"unit": "g", "min": 1,   "max": 99999},
+          7: {"unit": "g", "min": 0,   "max": 99999},
+        },
+        "corrective_actions": {
+          5: "Temp dropped during run: stop, re-verify, document.",
+          6: "Record actual. Calculate press yield %: rosin ÷ hash × 100.",
+          7: "All press waste must be logged. Zero waste is unusual — verify.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "curing",
+        "name": "Curing — Fresh Press or Badder",
+        "steps": [
+          "FRESH PRESS: Proceed directly to filling — skip remaining steps in this phase",
+          "BADDER: Collect rosin in clean glass container",
+          "BADDER: Allow to nucleate at room temperature — do not disturb for first 24 hours",
+          "BADDER: After nucleation begins, whip with clean tool until uniform badder consistency",
+          "BADDER: Check consistency — smooth, creamy, no separation",
+          "Record cure method used: Fresh Press or Badder",
+          "Record cure start time and completion time",
+        ],
+        "ccps": [4, 5],
+        "ccp_labels": {
+          4: "Cure method confirmed — Fresh Press or Badder",
+          5: "Cure duration (hours) — Badder only",
+        },
+        "ccp_specs": {
+          4: {"unit": "boolean", "min": 1,  "max": 1},
+          5: {"unit": "hours",   "min": 0,  "max": 72},
+        },
+        "corrective_actions": {
+          4: "Must be documented. Fresh Press and Badder are different products.",
+          5: "Badder not nucleating after 48 hrs: consult supervisor. Document.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "filling",
+        "name": "Filling — Jar / Container",
+        "steps": [
+          "Wipe CR glass jars inside and out with clean microfiber cloth",
+          "Calibrate scale — verify reads 0.0g with parchment",
+          "Weigh 1.0-1.05g rosin per jar on certified scale",
+          "Change gloves when hands become sticky — cross-contamination risk",
+          "Record total jars filled",
+          "Apply CR cap immediately after filling each jar",
+        ],
+        "ccps": [1, 2],
+        "ccp_labels": {
+          1: "Fill weight per jar (g) — must be 1.0-1.05g",
+          2: "Total jars filled (yield count)",
+        },
+        "ccp_specs": {
+          1: {"unit": "g",     "min": 1.0, "max": 1.05},
+          2: {"unit": "units", "min": 1,   "max": 99999},
+        },
+        "corrective_actions": {
+          1: "OOS: remove excess or top up. Do not seal OOS jars without correction.",
+          2: "Outside 95-105%: Deviation Log.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+      {
+        "id": "packaging",
+        "name": "Packaging & Labeling",
+        "steps": [
+          "Apply strain top sticker to CR cap",
+          "Apply wrap sticker to jar exterior",
+          "Place in product box",
+          "Apply required info sticker — verify all 5 fields: product name, batch #, METRC UID, mfg date, THC%",
+          "Supervisor label approval — all 5 fields confirmed before labeling run",
+          "Record total packaged units",
+          "Record 2 retention samples — label with strain, batch ID, METRC UID, mfg date",
+        ],
+        "ccps": [3, 5],
+        "ccp_labels": {
+          3: "Label verification — all 5 required fields present (yes/no)",
+          5: "Total packaged units",
+        },
+        "ccp_specs": {
+          3: {"unit": "boolean", "min": 1, "max": 1},
+          5: {"unit": "units",   "min": 1, "max": 99999},
+        },
+        "corrective_actions": {
+          3: "Any missing field: halt labeling. Correct before proceeding.",
+          5: "Outside 95-105% of filled jars: Deviation Log.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Wipe rosin press plates with ISO-alcohol — inspect for residue",
+          "Clean all filling tools and utensils with ISO-alcohol",
+          "Wipe all tabletop surfaces with 70-99% ISO-alcohol",
+          "UV light on overnight after ISO clean",
+          "Record cleaning log entries (Section 5)",
+        ],
+        "ccps": [],
+        "ccp_labels": {},
+        "ccp_specs": {},
+        "corrective_actions": {},
+        "notes_required": False,
+        "sign_off_roles": ["Operator"],
+      },
+    ],
+  },  # ← closes "rosin_press"
+
+}  
+
+
 
 
 
 DR_NORMS_PREFIXES = ("dr. norm", "dr norm", "dr.norm", "norms", "doctor norm")
 
-def detect_product_family(item_name: str, category: str = "") -> str:
+def detect_product_family(item_name: str, category: str = "",
+                           bpr_type: str = "") -> str:
     """
-    Maps a product name / category to a BPR phase family key.
-    Returns the key or None if not recognized.
-    Dr. Norm's detection runs first — before generic keyword checks.
+    bpr_type param added: "wash" or "press" routes rosin correctly.
+    Called from /bpr/create with the extra field.
     """
     n = (item_name or "").lower().strip()
     c = (category or "").lower().strip()
+    t = (bpr_type or "").lower().strip()
 
-    # Dr. Norm's detection (runs FIRST)
+    # Dr. Norm's — runs first
     is_norms = any(n.startswith(p) for p in DR_NORMS_PREFIXES)
     if is_norms:
-        # Sleep Bites — dual cannabinoid, own key
         if any(x in n for x in ("sleep bite", "sleep bites", "sleep brownie")):
             return "dr_norms_brownie_sleep"
-        # Brownie / Blondie / PB Cup
         if any(x in n for x in ("brownie", "blondie", "pb cup", "peanut butter cup")):
             return "dr_norms_brownie"
-        # NANO cookies — own key
         if any(x in n for x in ("nano", "cookies & cream", "cookies and cream", "cookies n cream")):
             return "dr_norms_cookie_nano"
-        # RKT
         if any(x in n for x in ("rkt", "rice krispy", "rice krispie",
                                   "krispie treat", "krispy treat", "matcha")):
             return "dr_norms_rkt"
-        # Standard cookies — default fallback for Dr. Norm's
         return "dr_norms_cookie"
 
-    # Existing Punch / Tempo detection (unchanged)
+    # Rosin — split by bpr_type
     if "live rosin" in n and "vape" not in n and "aio" not in n:
-        return "live_rosin"
-    if "bho badder" in n or "bho shatter" in n:
-        return "bho_badder"
-    if "gummies" in n or "asteroids" in n or "fruit snack" in n:
-        return "gummies"
-    if "tempo" in n or "aio" in n or "distillate" in n or "510" in n or "vape" in n or "rosin vape" in n:
-        return "vapes"
+        if t == "wash":  return "rosin_wash"
+        if t == "press": return "rosin_press"
+        return "rosin_press"  # default for finished product batches
 
-    # category fallback
-    if "concentrate" in c or "rosin" in c:
-        return "live_rosin"
-    if "vape" in c or "cartridge" in c:
-        return "vapes"
-    if "edible" in c or "gummy" in c:
-        return "gummies"
+    # Rosin downstream
+    if "rosin aio" in n or "rosin vape" in n:   return "rosin_aio"
+    if "rocket" in n:                            return "rosin_rocket"
+
+    # BHO
+    if "bho badder" in n or "bho shatter" in n: return "bho_badder"
+
+    # Edibles
+    if "gummies" in n:                           return "gummies"
+    if "asteroids" in n:                         return "gummies"
+    if "malt balls" in n:                        return "punch_malt_balls"
+    if "punchbar" in n or "chocolate" in n:      return "punch_chocolate"
+    if "cookie delight" in n:                    return "punch_cookie_delight"
+    if "stinger" in n:                           return "punch_stinger"
+
+    # Vapes
+    if "tempo" in n or "aio" in n or "distillate" in n or \
+       "510" in n or "vape" in n:               return "vapes"
+
+    # Category fallback
+    if "concentrate" in c or "rosin" in c:       return "rosin_press"
+    if "vape" in c or "cartridge" in c:          return "vapes"
+    if "edible" in c:                            return "gummies"
 
     return None
-
