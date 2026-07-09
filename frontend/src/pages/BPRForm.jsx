@@ -4,6 +4,7 @@ import PhaseCard from "../components/PhaseCard";
 import SupervisorRelease from "../components/SupervisorRelease";
 import Toast from "../components/Toast";
 import "./BPRForm.css";
+import SessionLogPhase from "../components/SessionLogPhase";
 
 export default function BPRForm({ bprData, setBprData, params, onComplete }) {
   const [phases, setPhases]           = useState([]);
@@ -58,6 +59,14 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
       }));
       showToast("Failed to save — check connection", "error");
     }
+  }
+
+  async function toggleStepAwaitable(phaseId, stepIndex, checked, employeeName) {
+    await fetch(`${API_BASE}/bpr/${uid}/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phase_id: phaseId, step_index: stepIndex, checked, checked_by: employeeName }),
+    });
   }
 
   // ── Phase sign-off ────────────────────────────────────────────────────
@@ -220,30 +229,48 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
       {/* ── MAIN CONTENT ──────────────────────────────────────────── */}
       <main className="bpr-main">
 
-        {phases.map((phase, i) => (
-          <div
-            key={phase.id}
-            ref={el => phaseRefs.current[phase.id] = el}
-            className="phase-section"
-          >
-            <PhaseCard
-              phase={phase}
-              phaseIndex={i}
-              isActive={activePhase === phase.id}
-              isSigned={!!signoffs[phase.id]}
-              signoff={signoffs[phase.id]}
-              stepChecks={stepChecks}
-              onToggle={(stepIdx, checked, name) =>
-                toggleStep(phase.id, stepIdx, checked, name)
-              }
-              onSignOff={(name, notes, ccpValues) =>
-                signOffPhase(phase.id, name, notes, ccpValues)
-              }
-              onExpand={() => setActivePhase(activePhase === phase.id ? null : phase.id)}
-              saving={saving}
-            />
-          </div>
-        ))}
+        {phases.map((phase, i) => {
+          const isSessionPhase = ["ice_water_wash", "freeze_drying", "sifting"].includes(phase.id);
+          return (
+            <div
+              key={phase.id}
+              ref={el => phaseRefs.current[phase.id] = el}
+              className="phase-section"
+            >
+              {isSessionPhase ? (
+                <SessionLogPhase
+                  phase={phase}
+                  phaseIndex={i}
+                  hashLotId={params.batchId}
+                  isActive={activePhase === phase.id}
+                  isSigned={!!signoffs[phase.id]}
+                  signoff={signoffs[phase.id]}
+                  onToggleStep={(idx, checked, name) => toggleStepAwaitable(phase.id, idx, checked, name)}
+                  onSignOff={(name, notes, ccpValues) => signOffPhase(phase.id, name, notes, ccpValues)}
+                  onExpand={() => setActivePhase(activePhase === phase.id ? null : phase.id)}
+                  saving={saving}
+                />
+              ) : (
+                <PhaseCard
+                  phase={phase}
+                  phaseIndex={i}
+                  isActive={activePhase === phase.id}
+                  isSigned={!!signoffs[phase.id]}
+                  signoff={signoffs[phase.id]}
+                  stepChecks={stepChecks}
+                  onToggle={(stepIdx, checked, name) =>
+                    toggleStep(phase.id, stepIdx, checked, name)
+                  }
+                  onSignOff={(name, notes, ccpValues) =>
+                    signOffPhase(phase.id, name, notes, ccpValues)
+                  }
+                  onExpand={() => setActivePhase(activePhase === phase.id ? null : phase.id)}
+                  saving={saving}
+                />
+              )}
+            </div>
+          );
+        })}
 
         {/* ── RELEASE BANNER ──────────────────────────────────────── */}
         {allSigned && !showRelease && (

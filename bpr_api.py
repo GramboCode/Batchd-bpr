@@ -136,6 +136,75 @@ CREATE INDEX IF NOT EXISTS idx_hash_lots_status ON hash_lots(status);
 CREATE INDEX IF NOT EXISTS idx_hash_inputs_lot  ON hash_lot_inputs(hash_lot_id);
 CREATE INDEX IF NOT EXISTS idx_hash_usage_lot   ON hash_lot_usage(hash_lot_id);
 CREATE INDEX IF NOT EXISTS idx_hash_usage_press ON hash_lot_usage(press_bpr_id);
+
+CREATE TABLE IF NOT EXISTS hash_lot_wash_sessions (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id         TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    session_num         INT NOT NULL,
+    operator_name       TEXT NOT NULL,
+    equipment_id        TEXT,
+    tea_bag_count       INT,
+    fresh_frozen_uids   TEXT[],
+    wet_weight_g        NUMERIC NOT NULL,
+    started_at          TIMESTAMPTZ,
+    completed_at        TIMESTAMPTZ,
+    ro_water_confirmed  BOOLEAN,
+    notes               TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_freezedry_sessions (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id           TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    session_num           INT NOT NULL,
+    operator_name         TEXT NOT NULL,
+    equipment_id          TEXT,
+    input_wet_weight_g    NUMERIC NOT NULL,
+    output_dry_weight_g   NUMERIC,
+    started_at            TIMESTAMPTZ,
+    completed_at          TIMESTAMPTZ,
+    pump_oil_checked      BOOLEAN,
+    notes                 TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_sift_sessions (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id         TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    session_num         INT NOT NULL,
+    operator_name       TEXT NOT NULL,
+    dry_weight_in_g     NUMERIC NOT NULL,
+    sift_weight_out_g   NUMERIC,
+    storage_location    TEXT,
+    completed_at        TIMESTAMPTZ,
+    notes               TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_wash_to_freezedry_allocations (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    wash_session_id       UUID NOT NULL REFERENCES hash_lot_wash_sessions(id),
+    freezedry_session_id  UUID NOT NULL REFERENCES hash_lot_freezedry_sessions(id),
+    weight_allocated_g    NUMERIC NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hash_lot_freezedry_to_sift_allocations (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    freezedry_session_id  UUID NOT NULL REFERENCES hash_lot_freezedry_sessions(id),
+    sift_session_id       UUID NOT NULL REFERENCES hash_lot_sift_sessions(id),
+    weight_allocated_g    NUMERIC NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for the lookups we'll hit constantly (fetching sessions for a lot, allocations for a session)
+CREATE INDEX IF NOT EXISTS idx_wash_sessions_lot       ON hash_lot_wash_sessions(hash_lot_id);
+CREATE INDEX IF NOT EXISTS idx_freezedry_sessions_lot  ON hash_lot_freezedry_sessions(hash_lot_id);
+CREATE INDEX IF NOT EXISTS idx_sift_sessions_lot       ON hash_lot_sift_sessions(hash_lot_id);
+CREATE INDEX IF NOT EXISTS idx_w2f_wash                ON hash_lot_wash_to_freezedry_allocations(wash_session_id);
+CREATE INDEX IF NOT EXISTS idx_w2f_freezedry           ON hash_lot_wash_to_freezedry_allocations(freezedry_session_id);
+CREATE INDEX IF NOT EXISTS idx_f2s_freezedry           ON hash_lot_freezedry_to_sift_allocations(freezedry_session_id);
+CREATE INDEX IF NOT EXISTS idx_f2s_sift                ON hash_lot_freezedry_to_sift_allocations(sift_session_id);
 """
 
 @app.on_event("startup")
@@ -175,6 +244,44 @@ class SupervisorReleaseRequest(BaseModel):
     deviation_notes: Optional[str] = None
     total_yield: Optional[str] = None
 
+class WashSessionCreate(BaseModel):
+    operator_name: str
+    equipment_id: Optional[str] = None
+    tea_bag_count: Optional[int] = None
+    fresh_frozen_uids: List[str] = []
+    wet_weight_g: float
+    started_at: Optional[str] = None
+    ro_water_confirmed: Optional[bool] = None
+    notes: Optional[str] = None
+
+class WashSessionClose(BaseModel):
+    wet_weight_g: Optional[float] = None  # allow correction at close if needed
+    notes: Optional[str] = None
+
+class FreezeDrySessionCreate(BaseModel):
+    operator_name: str
+    equipment_id: Optional[str] = None
+    started_at: Optional[str] = None
+    pump_oil_checked: Optional[bool] = None
+    notes: Optional[str] = None
+    # allocations: which wash sessions feed this load, and how much of each
+    allocations: List[dict]  # [{"wash_session_id": "...", "weight_allocated_g": 4000}]
+
+class FreezeDrySessionClose(BaseModel):
+    output_dry_weight_g: float
+    notes: Optional[str] = None
+
+class SiftSessionCreate(BaseModel):
+    operator_name: str
+    storage_location: Optional[str] = None
+    notes: Optional[str] = None
+    # allocations: which freeze-dry sessions feed this sift, and how much of each
+    allocations: List[dict]  # [{"freezedry_session_id": "...", "weight_allocated_g": 1200}]
+
+class SiftSessionClose(BaseModel):
+    sift_weight_out_g: float
+    notes: Optional[str] = None    
+
 # ── Helper: now() UTC ─────────────────────────────────────────────────────
 def now_utc():
     return datetime.now(timezone.utc).isoformat()
@@ -212,6 +319,9 @@ class HashLotStatusRequest(BaseModel):
     press_metrc_uid: Optional[str] = None
     weight_used_g: Optional[float] = None
 
+class HashLotAssignUidRequest(BaseModel):
+    metrc_uid: str
+    sheet_url: Optional[str] = None
 
 # ── Hash lot ID generator ─────────────────────────────────────────
 def generate_hash_lot_id(strain_name: str, is_mixed: bool, conn) -> str:
@@ -1077,6 +1187,27 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
         print(f"Drive upload error (non-fatal): {e}")
         return None
 
+@app.patch("/hash/{hash_lot_id}/assign-uid")
+def assign_uid_to_hash_lot(hash_lot_id: str, req: HashLotAssignUidRequest):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            if lot["metrc_uid"]:
+                raise HTTPException(400, f"Hash lot already has a METRC UID: {lot['metrc_uid']}")
+
+            cur.execute("""
+                UPDATE hash_lots SET metrc_uid = %s, sheet_url = %s
+                WHERE hash_lot_id = %s RETURNING *
+            """, (req.metrc_uid, req.sheet_url, hash_lot_id))
+            updated = dict(cur.fetchone())
+        conn.commit()
+        return {"lot": updated, "message": f"METRC UID {req.metrc_uid} assigned to {hash_lot_id}"}
+    finally:
+        conn.close()
 
 async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     """
@@ -1250,5 +1381,475 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
     except Exception as e:
         print(f"GAS BPR write-back failed (non-fatal): {e}")
 
+# ── WASH SESSIONS ──────────────────────────────────────────────
+
+@app.post("/hash/{hash_lot_id}/wash-session")
+def create_wash_session(hash_lot_id: str, req: WashSessionCreate):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            # Confirm lot exists
+            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+
+            # Next session number for this lot
+            cur.execute(
+                "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
+                "FROM hash_lot_wash_sessions WHERE hash_lot_id = %s",
+                (hash_lot_id,)
+            )
+            session_num = cur.fetchone()["next_num"]
+
+            cur.execute("""
+                INSERT INTO hash_lot_wash_sessions
+                    (hash_lot_id, session_num, operator_name, equipment_id,
+                     tea_bag_count, fresh_frozen_uids, wet_weight_g,
+                     started_at, ro_water_confirmed, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (
+                hash_lot_id, session_num, req.operator_name, req.equipment_id,
+                req.tea_bag_count, req.fresh_frozen_uids, req.wet_weight_g,
+                req.started_at, req.ro_water_confirmed, req.notes
+            ))
+            session = dict(cur.fetchone())
+
+            # Move lot status to 'washing' if it isn't further along already
+            cur.execute(
+                "UPDATE hash_lots SET status = 'washing' WHERE hash_lot_id = %s AND status = 'drying'",
+                (hash_lot_id,)
+            )
+        conn.commit()
+        return {"session": session, "message": f"Wash session {session_num} logged"}
+    finally:
+        conn.close()
+
+
+@app.get("/hash/{hash_lot_id}/wash-sessions")
+def list_wash_sessions(hash_lot_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM hash_lot_wash_sessions
+                WHERE hash_lot_id = %s ORDER BY session_num
+            """, (hash_lot_id,))
+            sessions = [dict(r) for r in cur.fetchall()]
+        return {"sessions": sessions, "count": len(sessions)}
+    finally:
+        conn.close()
+
+
+@app.patch("/hash/wash-session/{session_id}")
+def close_wash_session(session_id: str, req: WashSessionClose):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE hash_lot_wash_sessions SET
+                    completed_at = NOW(),
+                    wet_weight_g = COALESCE(%s, wet_weight_g),
+                    notes = COALESCE(%s, notes)
+                WHERE id = %s
+                RETURNING *
+            """, (req.wet_weight_g, req.notes, session_id))
+            updated = cur.fetchone()
+            if not updated:
+                raise HTTPException(404, "Wash session not found")
+        conn.commit()
+        return {"session": dict(updated), "message": "Wash session closed"}
+    finally:
+        conn.close()
+
+
+# ── FREEZE-DRY SESSIONS + ALLOCATIONS ──────────────────────────
+
+@app.get("/hash/{hash_lot_id}/available-wash-sessions")
+def get_available_wash_sessions(hash_lot_id: str):
+    """
+    Returns wash sessions for this lot with their remaining unallocated weight —
+    powers the 'select which wash sessions go in this dryer' checklist.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    ws.*,
+                    COALESCE(SUM(a.weight_allocated_g), 0) as allocated_g,
+                    ws.wet_weight_g - COALESCE(SUM(a.weight_allocated_g), 0) as remaining_g
+                FROM hash_lot_wash_sessions ws
+                LEFT JOIN hash_lot_wash_to_freezedry_allocations a
+                    ON a.wash_session_id = ws.id
+                WHERE ws.hash_lot_id = %s
+                GROUP BY ws.id
+                HAVING ws.wet_weight_g - COALESCE(SUM(a.weight_allocated_g), 0) > 0
+                ORDER BY ws.session_num
+            """, (hash_lot_id,))
+            sessions = [dict(r) for r in cur.fetchall()]
+        return {"sessions": sessions}
+    finally:
+        conn.close()
+
+
+@app.post("/hash/{hash_lot_id}/freezedry-session")
+def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+
+            if not req.allocations:
+                raise HTTPException(400, "At least one wash session allocation is required")
+
+            # Validate each allocation against remaining unallocated weight
+            total_input = 0
+            for alloc in req.allocations:
+                ws_id = alloc["wash_session_id"]
+                weight = alloc["weight_allocated_g"]
+
+                cur.execute("""
+                    SELECT
+                        ws.wet_weight_g,
+                        COALESCE(SUM(a.weight_allocated_g), 0) as already_allocated
+                    FROM hash_lot_wash_sessions ws
+                    LEFT JOIN hash_lot_wash_to_freezedry_allocations a
+                        ON a.wash_session_id = ws.id
+                    WHERE ws.id = %s
+                    GROUP BY ws.wet_weight_g
+                """, (ws_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(404, f"Wash session not found: {ws_id}")
+
+                remaining = row["wet_weight_g"] - row["already_allocated"]
+                if weight > remaining:
+                    raise HTTPException(400, {
+                        "message": f"Over-allocation on wash session {ws_id}",
+                        "remaining_g": float(remaining),
+                        "requested_g": weight
+                    })
+                total_input += weight
+
+            # Next session number
+            cur.execute(
+                "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
+                "FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s",
+                (hash_lot_id,)
+            )
+            session_num = cur.fetchone()["next_num"]
+
+            # Create the freeze-dry session
+            cur.execute("""
+                INSERT INTO hash_lot_freezedry_sessions
+                    (hash_lot_id, session_num, operator_name, equipment_id,
+                     input_wet_weight_g, started_at, pump_oil_checked, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (
+                hash_lot_id, session_num, req.operator_name, req.equipment_id,
+                total_input, req.started_at, req.pump_oil_checked, req.notes
+            ))
+            fd_session = dict(cur.fetchone())
+
+            # Write the allocations
+            for alloc in req.allocations:
+                cur.execute("""
+                    INSERT INTO hash_lot_wash_to_freezedry_allocations
+                        (wash_session_id, freezedry_session_id, weight_allocated_g)
+                    VALUES (%s, %s, %s)
+                """, (alloc["wash_session_id"], fd_session["id"], alloc["weight_allocated_g"]))
+
+            # Move lot status forward
+            cur.execute(
+                "UPDATE hash_lots SET status = 'drying' WHERE hash_lot_id = %s",
+                (hash_lot_id,)
+            )
+        conn.commit()
+        return {"session": fd_session, "message": f"Freeze-dry session {session_num} started"}
+    finally:
+        conn.close()
+
+
+@app.get("/hash/{hash_lot_id}/freezedry-sessions")
+def list_freezedry_sessions(hash_lot_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT fd.*,
+                    json_agg(json_build_object(
+                        'wash_session_id', a.wash_session_id,
+                        'weight_allocated_g', a.weight_allocated_g
+                    )) as wash_inputs
+                FROM hash_lot_freezedry_sessions fd
+                LEFT JOIN hash_lot_wash_to_freezedry_allocations a
+                    ON a.freezedry_session_id = fd.id
+                WHERE fd.hash_lot_id = %s
+                GROUP BY fd.id
+                ORDER BY fd.session_num
+            """, (hash_lot_id,))
+            sessions = [dict(r) for r in cur.fetchall()]
+        return {"sessions": sessions}
+    finally:
+        conn.close()
+
+
+@app.patch("/hash/freezedry-session/{session_id}")
+def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE hash_lot_freezedry_sessions SET
+                    completed_at = NOW(),
+                    output_dry_weight_g = %s,
+                    notes = COALESCE(%s, notes)
+                WHERE id = %s
+                RETURNING *
+            """, (req.output_dry_weight_g, req.notes, session_id))
+            updated = cur.fetchone()
+            if not updated:
+                raise HTTPException(404, "Freeze-dry session not found")
+        conn.commit()
+        return {"session": dict(updated), "message": "Freeze-dry session closed"}
+    finally:
+        conn.close()
+
+# ── SIFT SESSIONS + ALLOCATIONS ─────────────────────────────────
+
+@app.get("/hash/{hash_lot_id}/available-freezedry-sessions")
+def get_available_freezedry_sessions(hash_lot_id: str):
+    """
+    Returns freeze-dry sessions for this lot with remaining unallocated dry weight —
+    powers the 'select which dryer loads go into this sift' checklist.
+    Only includes sessions that have actually closed (have an output_dry_weight_g).
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    fd.*,
+                    COALESCE(SUM(a.weight_allocated_g), 0) as allocated_g,
+                    fd.output_dry_weight_g - COALESCE(SUM(a.weight_allocated_g), 0) as remaining_g
+                FROM hash_lot_freezedry_sessions fd
+                LEFT JOIN hash_lot_freezedry_to_sift_allocations a
+                    ON a.freezedry_session_id = fd.id
+                WHERE fd.hash_lot_id = %s
+                  AND fd.output_dry_weight_g IS NOT NULL
+                GROUP BY fd.id
+                HAVING fd.output_dry_weight_g - COALESCE(SUM(a.weight_allocated_g), 0) > 0
+                ORDER BY fd.session_num
+            """, (hash_lot_id,))
+            sessions = [dict(r) for r in cur.fetchall()]
+        return {"sessions": sessions}
+    finally:
+        conn.close()
+
+
+@app.post("/hash/{hash_lot_id}/sift-session")
+def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+
+            if not req.allocations:
+                raise HTTPException(400, "At least one freeze-dry session allocation is required")
+
+            # Validate each allocation against remaining unallocated dry weight
+            total_input = 0
+            for alloc in req.allocations:
+                fd_id = alloc["freezedry_session_id"]
+                weight = alloc["weight_allocated_g"]
+
+                cur.execute("""
+                    SELECT
+                        fd.output_dry_weight_g,
+                        COALESCE(SUM(a.weight_allocated_g), 0) as already_allocated
+                    FROM hash_lot_freezedry_sessions fd
+                    LEFT JOIN hash_lot_freezedry_to_sift_allocations a
+                        ON a.freezedry_session_id = fd.id
+                    WHERE fd.id = %s
+                    GROUP BY fd.output_dry_weight_g
+                """, (fd_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(404, f"Freeze-dry session not found: {fd_id}")
+                if row["output_dry_weight_g"] is None:
+                    raise HTTPException(400, f"Freeze-dry session {fd_id} has not been closed yet — no dry weight recorded")
+
+                remaining = row["output_dry_weight_g"] - row["already_allocated"]
+                if weight > remaining:
+                    raise HTTPException(400, {
+                        "message": f"Over-allocation on freeze-dry session {fd_id}",
+                        "remaining_g": float(remaining),
+                        "requested_g": weight
+                    })
+                total_input += weight
+
+            # Next session number
+            cur.execute(
+                "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
+                "FROM hash_lot_sift_sessions WHERE hash_lot_id = %s",
+                (hash_lot_id,)
+            )
+            session_num = cur.fetchone()["next_num"]
+
+            # Create the sift session
+            cur.execute("""
+                INSERT INTO hash_lot_sift_sessions
+                    (hash_lot_id, session_num, operator_name,
+                     dry_weight_in_g, storage_location, notes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (
+                hash_lot_id, session_num, req.operator_name,
+                total_input, req.storage_location, req.notes
+            ))
+            sift_session = dict(cur.fetchone())
+
+            # Write the allocations
+            for alloc in req.allocations:
+                cur.execute("""
+                    INSERT INTO hash_lot_freezedry_to_sift_allocations
+                        (freezedry_session_id, sift_session_id, weight_allocated_g)
+                    VALUES (%s, %s, %s)
+                """, (alloc["freezedry_session_id"], sift_session["id"], alloc["weight_allocated_g"]))
+
+            # Move lot status forward
+            cur.execute(
+                "UPDATE hash_lots SET status = 'sifting' WHERE hash_lot_id = %s",
+                (hash_lot_id,)
+            )
+        conn.commit()
+        return {"session": sift_session, "message": f"Sift session {session_num} started"}
+    finally:
+        conn.close()
+
+
+@app.get("/hash/{hash_lot_id}/sift-sessions")
+def list_sift_sessions(hash_lot_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.*,
+                    json_agg(json_build_object(
+                        'freezedry_session_id', a.freezedry_session_id,
+                        'weight_allocated_g', a.weight_allocated_g
+                    )) as freezedry_inputs
+                FROM hash_lot_sift_sessions s
+                LEFT JOIN hash_lot_freezedry_to_sift_allocations a
+                    ON a.sift_session_id = s.id
+                WHERE s.hash_lot_id = %s
+                GROUP BY s.id
+                ORDER BY s.session_num
+            """, (hash_lot_id,))
+            sessions = [dict(r) for r in cur.fetchall()]
+        return {"sessions": sessions}
+    finally:
+        conn.close()
+
+
+@app.patch("/hash/sift-session/{session_id}")
+def close_sift_session(session_id: str, req: SiftSessionClose):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE hash_lot_sift_sessions SET
+                    completed_at = NOW(),
+                    sift_weight_out_g = %s,
+                    notes = COALESCE(%s, notes)
+                WHERE id = %s
+                RETURNING *
+            """, (req.sift_weight_out_g, req.notes, session_id))
+            updated = cur.fetchone()
+            if not updated:
+                raise HTTPException(404, "Sift session not found")
+        conn.commit()
+        return {"session": dict(updated), "message": "Sift session closed"}
+    finally:
+        conn.close()
+
+@app.get("/hash/{hash_lot_id}/reconciliation")
+def get_lot_reconciliation(hash_lot_id: str):
+    """
+    Rolls up totals across all wash, freeze-dry, and sift sessions for a lot.
+    Used for the close-out summary and as a sanity check on yields.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
+            lot = cur.fetchone()
+            if not lot:
+                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            lot = dict(lot)
+
+            cur.execute("""
+                SELECT COUNT(*) as count, COALESCE(SUM(wet_weight_g), 0) as total_wet_weight_g,
+                       COUNT(*) FILTER (WHERE completed_at IS NULL) as open_count
+                FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
+            """, (hash_lot_id,))
+            wash_summary = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT COUNT(*) as count,
+                       COALESCE(SUM(input_wet_weight_g), 0) as total_input_wet_weight_g,
+                       COALESCE(SUM(output_dry_weight_g), 0) as total_output_dry_weight_g,
+                       COUNT(*) FILTER (WHERE completed_at IS NULL) as open_count
+                FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s
+            """, (hash_lot_id,))
+            freezedry_summary = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT COUNT(*) as count,
+                       COALESCE(SUM(dry_weight_in_g), 0) as total_dry_weight_in_g,
+                       COALESCE(SUM(sift_weight_out_g), 0) as total_sift_weight_out_g,
+                       COUNT(*) FILTER (WHERE completed_at IS NULL) as open_count
+                FROM hash_lot_sift_sessions WHERE hash_lot_id = %s
+            """, (hash_lot_id,))
+            sift_summary = dict(cur.fetchone())
+
+            # All fresh-frozen UIDs across every wash session, deduplicated
+            cur.execute("""
+                SELECT DISTINCT unnest(fresh_frozen_uids) as uid
+                FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
+            """, (hash_lot_id,))
+            all_fresh_frozen_uids = [r["uid"] for r in cur.fetchall()]
+
+            total_wet = float(wash_summary["total_wet_weight_g"])
+            total_sift = float(sift_summary["total_sift_weight_out_g"])
+            overall_yield_pct = round((total_sift / total_wet) * 100, 2) if total_wet > 0 else None
+
+            all_stages_closed = (
+                wash_summary["open_count"] == 0 and wash_summary["count"] > 0 and
+                freezedry_summary["open_count"] == 0 and freezedry_summary["count"] > 0 and
+                sift_summary["open_count"] == 0 and sift_summary["count"] > 0
+            )
+
+        return {
+            "hash_lot_id": hash_lot_id,
+            "lot": lot,
+            "wash": wash_summary,
+            "freeze_dry": freezedry_summary,
+            "sift": sift_summary,
+            "overall_yield_pct": overall_yield_pct,
+            "all_fresh_frozen_uids": all_fresh_frozen_uids,
+            "ready_to_close": all_stages_closed,
+        }
+    finally:
+        conn.close()
 
 # Health check is defined at the top of this file above all /bpr/{uid} routes
