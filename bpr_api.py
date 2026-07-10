@@ -681,7 +681,7 @@ def update_step(uid: str, req: StepCheckRequest):
 # all CCP values provided
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/{uid}/phase/signoff")
-def phase_signoff(uid: str, req: PhaseSignoffRequest):
+async def phase_signoff(uid: str, req: PhaseSignoffRequest):
     conn = get_db()
     try:
         with conn.cursor() as cur:
