@@ -52,7 +52,7 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 from bpr_phases import BPR_PHASES, detect_product_family
 
-app = FastAPI(title="BatchD BPR API", version="2.0.0")
+app = FastAPI(title="BatchD BPR API", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,7 +66,7 @@ app.add_middleware(
 @app.get("/health")
 @app.get("/bpr/health")
 def health():
-    return {"status": "ok", "service": "BatchD BPR", "version": "2.0.0"}
+    return {"status": "ok", "service": "BatchD BPR", "version": "2.1.0"}
 
 # ── DB connection ─────────────────────────────────────────────────────────
 def get_db():
@@ -1325,6 +1325,11 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
         # Ping GAS webhook to update BPR_STATUS in UID_TRACKER
         await ping_gas_webhook(uid, "completed", pdf_url)
 
+        # rosin_wash: write the Section 2 source summary + Section 3 yield
+        # rollups into the wash BPR sheet now that all numbers are final
+        if family == "rosin_wash":
+            await push_wash_release_summary(uid, req.supervisor_name)
+
         return {
             "success": True,
             "bpr": completed,
@@ -1676,6 +1681,12 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         print("No GAS_WEBHOOK_URL — skipping BPR write-back")
         return
 
+    # rosin_wash has its own writer: named ranges for Section 6 plus the
+    # multi-session summary rows. Defined in the wash write-back section below.
+    if product_family == "rosin_wash":
+        await push_wash_phase_to_gas(uid, phase_id, phase_def, signoff, steps)
+        return
+
     if product_family != "live_rosin":
         print(f"BPR write-back not yet implemented for {product_family} — skipping")
         return
@@ -1795,6 +1806,252 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
     except Exception as e:
         print(f"GAS BPR write-back failed (non-fatal): {e}")
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ROSIN WASH → GOOGLE SHEET WRITE-BACK
+# Three write paths into the wash BPR sheet, mirroring how the paperwork flows:
+#   1. Phase signoff       → Section 6 step rows   (named ranges WASH_S6_STEP{n}_*)
+#   2. Session close       → 'Ice Extraction Session Log' tab (row append via GAS)
+#   3. Supervisor release  → Section 2/3 rollups   (WASH_S2_* / WASH_S3_*)
+# All fire-and-forget: a Sheets hiccup never blocks an operator mid-production.
+# GAS side: serverWriteWashBPRFields / serverAppendWashSessionLog
+# ═══════════════════════════════════════════════════════════════════════════
+
+# App (phase_id, step_index) → Section 6 sheet step row, for per-step phases.
+# pre_production app steps 1-8 map to sheet rows 1-8; sanitation's 7 app steps
+# map to sheet rows 12-18. Rows 9-11 are the multi-session summary rows below.
+WASH_S6_PER_STEP_ROWS = {
+    "pre_production": {i: i + 1 for i in range(8)},
+    "sanitation":     {i: i + 12 for i in range(7)},
+}
+# Multi-session phases collapse to one summary row on the sheet — the full
+# per-session detail lives in the Session Log tab, not Section 6.
+WASH_S6_SUMMARY_ROWS = {"ice_water_wash": 9, "freeze_drying": 10, "sifting": 11}
+
+
+def _get_wash_sheet_url(lot_code: str) -> Optional[str]:
+    """
+    The wash BPR sheet URL is stored on the component lot at UID-assignment
+    time. Sending it to GAS lets the handler openByUrl() — deterministic,
+    same lesson as the COA folder fix: never locate documents by name search.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT sheet_url FROM bpr_component_lots WHERE lot_code = %s",
+                        (lot_code,))
+            row = cur.fetchone()
+            return row["sheet_url"] if row else None
+    finally:
+        conn.close()
+
+
+async def _post_wash_gas(payload: dict, label: str):
+    """Shared fire-and-forget POST to the GAS webhook."""
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
+        print(f"{label}: no GAS_WEBHOOK_URL — skipping")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(webhook_url, json=payload)
+            print(f"{label}: {resp.status_code} — {resp.text[:200]}")
+    except Exception as e:
+        print(f"{label} failed (non-fatal): {e}")
+
+
+def _wash_block_stats(lot_code: str, phase_id: str):
+    """
+    Session rollups for a multi-session phase's summary row: a readable
+    summary string plus the block's start/end timestamps.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            if phase_id == "ice_water_wash":
+                cur.execute("""
+                    SELECT COUNT(*) AS n, COALESCE(SUM(wet_weight_g),0) AS total,
+                           MIN(started_at) AS s, MAX(completed_at) AS e
+                    FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
+                """, (lot_code,))
+                r = cur.fetchone()
+                return (f"{r['n']} session(s) | {float(r['total']):,.0f} g wet collected",
+                        fmt_ts(r["s"]), fmt_ts(r["e"]))
+            if phase_id == "freeze_drying":
+                cur.execute("""
+                    SELECT COUNT(*) AS n, COALESCE(SUM(input_wet_weight_g),0) AS wet,
+                           COALESCE(SUM(output_dry_weight_g),0) AS dry,
+                           MIN(started_at) AS s, MAX(completed_at) AS e
+                    FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s
+                """, (lot_code,))
+                r = cur.fetchone()
+                return (f"{r['n']} load(s) | in {float(r['wet']):,.0f} g wet → out {float(r['dry']):,.0f} g dry",
+                        fmt_ts(r["s"]), fmt_ts(r["e"]))
+            if phase_id == "sifting":
+                cur.execute("""
+                    SELECT COUNT(*) AS n, COALESCE(SUM(dry_weight_in_g),0) AS din,
+                           COALESCE(SUM(sift_weight_out_g),0) AS dout,
+                           MAX(completed_at) AS e
+                    FROM hash_lot_sift_sessions WHERE hash_lot_id = %s
+                """, (lot_code,))
+                r = cur.fetchone()
+                return (f"{r['n']} sift(s) | in {float(r['din']):,.0f} g → final {float(r['dout']):,.0f} g",
+                        None, fmt_ts(r["e"]))
+    finally:
+        conn.close()
+    return ("", None, None)
+
+
+async def push_wash_phase_to_gas(uid: str, phase_id: str, phase_def: dict,
+                                 signoff: dict, steps: list):
+    """Writes a signed-off rosin_wash phase into Section 6 of the wash BPR sheet."""
+    sheet_url = _get_wash_sheet_url(uid)
+    if not sheet_url:
+        print(f"wash write-back: no sheet_url on lot {uid} — skipping")
+        return
+
+    signed_at  = fmt_ts(signoff.get("signed_at")) or ""
+    employee   = signoff.get("employee_name") or ""
+    ccp_values = signoff.get("ccp_values") or {}
+    if isinstance(ccp_values, str):
+        try: ccp_values = json.loads(ccp_values)
+        except Exception: ccp_values = {}
+
+    step_map = {s["step_index"]: s for s in steps if s["phase_id"] == phase_id}
+    fields = {}
+
+    # Per-step phases: every checklist row gets date / operator / checkmark
+    for step_idx, sheet_row in WASH_S6_PER_STEP_ROWS.get(phase_id, {}).items():
+        sd = step_map.get(step_idx, {})
+        checked_at = fmt_ts(sd.get("checked_at")) or signed_at
+        prefix = f"WASH_S6_STEP{sheet_row}"
+        fields[prefix + "_DATE"]     = (checked_at or "")[:10]
+        fields[prefix + "_OP1"]      = sd.get("checked_by") or employee
+        fields[prefix + "_VERIFIED"] = "✓" if sd.get("checked") else ""
+
+    # Multi-session phases: one summary row, detail lives in the Session Log
+    sheet_row = WASH_S6_SUMMARY_ROWS.get(phase_id)
+    if sheet_row:
+        summary, block_start, block_end = _wash_block_stats(uid, phase_id)
+
+        # Compact CCP readout for the Value cell: "Tea bag fill weight: 4010; ..."
+        labels = phase_def.get("ccp_labels", {})
+        ccp_bits = []
+        for idx in phase_def.get("ccps", []):
+            val = ccp_values.get(str(idx)) if ccp_values.get(str(idx)) is not None else ccp_values.get(idx)
+            if val not in (None, ""):
+                short = str(labels.get(idx, f"CCP {idx}")).split("—")[0].split("(")[0].strip()
+                ccp_bits.append(f"{short}: {val}")
+        value = summary + ((" | " + "; ".join(ccp_bits)) if ccp_bits else "")
+
+        prefix = f"WASH_S6_STEP{sheet_row}"
+        fields[prefix + "_DATE"]     = signed_at[:10] if signed_at else ""
+        fields[prefix + "_OP1"]      = employee
+        fields[prefix + "_VERIFIED"] = "✓"
+        fields[prefix + "_VALUE"]    = value
+        if block_start: fields[prefix + "_START"] = block_start
+        if block_end:   fields[prefix + "_END"]   = block_end
+
+        # Pass/Fail: sifting has a numeric spec we can actually check (yield
+        # 0.5-25% per ccp_specs); other summary rows pass by virtue of the
+        # signoff having cleared the app's CCP validation.
+        passfail = "Pass"
+        if phase_id == "sifting":
+            y = ccp_values.get("1") if ccp_values.get("1") is not None else ccp_values.get(1)
+            try:
+                passfail = "Pass" if 0.5 <= float(y) <= 25 else "FAIL"
+            except (TypeError, ValueError):
+                passfail = "Pass" if y not in (None, "") else ""
+        fields[prefix + "_PASSFAIL"] = passfail
+
+    if not fields:
+        print(f"wash write-back: nothing to write for phase {phase_id}")
+        return
+
+    await _post_wash_gas({
+        "action":   "writeWashBPRFields",
+        "uid":      uid,
+        "sheetUrl": sheet_url,
+        "fields":   fields,
+    }, f"wash BPR write-back ({phase_id})")
+
+
+async def push_wash_session_row(lot_code: str, block: str, row: dict):
+    """Mirrors one closed session as a row in the Session Log tab."""
+    sheet_url = _get_wash_sheet_url(lot_code)
+    if not sheet_url:
+        print(f"session log: no sheet_url on lot {lot_code} — skipping")
+        return
+    await _post_wash_gas({
+        "action":   "appendWashSessionLog",
+        "uid":      lot_code,
+        "sheetUrl": sheet_url,
+        "block":    block,
+        "row":      row,
+    }, f"session log append ({block})")
+
+
+async def push_wash_release_summary(uid: str, supervisor_name: str):
+    """
+    At supervisor release, writes the Section 2 source-material summary and
+    the Section 3 yield rollups (WASH_S2_* / WASH_S3_* named ranges).
+    """
+    sheet_url = _get_wash_sheet_url(uid)
+    if not sheet_url:
+        print(f"release summary: no sheet_url on lot {uid} — skipping")
+        return
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) AS n, COALESCE(SUM(wet_weight_g),0) AS wet
+                FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
+            """, (uid,))
+            wash = cur.fetchone()
+            cur.execute("""
+                SELECT COUNT(DISTINCT u) AS n FROM (
+                    SELECT unnest(fresh_frozen_uids) AS u
+                    FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
+                ) x
+            """, (uid,))
+            ff = cur.fetchone()
+            cur.execute("""
+                SELECT COALESCE(SUM(output_dry_weight_g),0) AS dry
+                FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s
+            """, (uid,))
+            fd = cur.fetchone()
+            cur.execute("""
+                SELECT COALESCE(SUM(sift_weight_out_g),0) AS sift
+                FROM hash_lot_sift_sessions WHERE hash_lot_id = %s
+            """, (uid,))
+            sift = cur.fetchone()
+    finally:
+        conn.close()
+
+    wet, dry, out = float(wash["wet"]), float(fd["dry"]), float(sift["sift"])
+    yield_pct = round(out / wet * 100, 2) if wet > 0 else ""
+    now_str = fmt_ts(datetime.now(timezone.utc))
+    today   = datetime.now(timezone.utc).strftime("%m/%d/%Y")
+
+    fields = {
+        "WASH_S2_TOTAL_SESSIONS": wash["n"],
+        "WASH_S2_TOTAL_FF_UIDS":  ff["n"],
+        "WASH_S2_TOTAL_WET_G":    wet,
+        "WASH_S2_VERIFIED_BY":    supervisor_name,
+        "WASH_S2_VERIFIED_DATE":  today,
+        "WASH_S3_WET_ACTUAL":      wet,       "WASH_S3_WET_INITIALS":      supervisor_name, "WASH_S3_WET_TIME":      now_str,
+        "WASH_S3_DRY_ACTUAL":      dry,       "WASH_S3_DRY_INITIALS":      supervisor_name, "WASH_S3_DRY_TIME":      now_str,
+        "WASH_S3_SIFT_ACTUAL":     out,       "WASH_S3_SIFT_INITIALS":     supervisor_name, "WASH_S3_SIFT_TIME":     now_str,
+        "WASH_S3_YIELDPCT_ACTUAL": yield_pct, "WASH_S3_YIELDPCT_INITIALS": supervisor_name, "WASH_S3_YIELDPCT_TIME": now_str,
+    }
+    await _post_wash_gas({
+        "action":   "writeWashBPRFields",
+        "uid":      uid,
+        "sheetUrl": sheet_url,
+        "fields":   fields,
+    }, "wash release summary")
+
+
 # ── WASH SESSIONS ──────────────────────────────────────────────
 
 @app.post("/hash/{hash_lot_id}/wash-session")
@@ -1850,7 +2107,9 @@ def list_wash_sessions(hash_lot_id: str):
 
 
 @app.patch("/hash/wash-session/{session_id}")
-def close_wash_session(session_id: str, req: WashSessionClose):
+async def close_wash_session(session_id: str, req: WashSessionClose):
+    # async so the Session Log push can fire as a background task —
+    # create_task needs a running event loop (the phase_signoff lesson)
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -1865,8 +2124,25 @@ def close_wash_session(session_id: str, req: WashSessionClose):
             updated = cur.fetchone()
             if not updated:
                 raise HTTPException(404, "Wash session not found")
+            updated = dict(updated)
         conn.commit()
-        return {"session": dict(updated), "message": "Wash session closed"}
+
+        # Mirror the closed session into the BPR sheet's Session Log tab
+        import asyncio
+        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "wash", {
+            "session_num":  updated["session_num"],
+            "operator":     updated["operator_name"],
+            "equipment":    updated["equipment_id"] or "",
+            "tea_bags":     updated["tea_bag_count"] if updated["tea_bag_count"] is not None else "",
+            "wet_weight":   float(updated["wet_weight_g"]) if updated["wet_weight_g"] is not None else "",
+            "ff_uids":      ", ".join(updated["fresh_frozen_uids"] or []),
+            "ro_confirmed": "Yes" if updated["ro_water_confirmed"] else "No",
+            "started_at":   fmt_ts(updated["started_at"]) or "",
+            "completed_at": fmt_ts(updated["completed_at"]) or "",
+            "notes":        updated["notes"] or "",
+        }))
+
+        return {"session": updated, "message": "Wash session closed"}
     finally:
         conn.close()
 
@@ -2002,7 +2278,7 @@ def list_freezedry_sessions(hash_lot_id: str):
 
 
 @app.patch("/hash/freezedry-session/{session_id}")
-def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
+async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -2017,8 +2293,37 @@ def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
             updated = cur.fetchone()
             if not updated:
                 raise HTTPException(404, "Freeze-dry session not found")
+            updated = dict(updated)
+
+            # "S1: 4,000g; S2: 3,500g" — which wash sessions fed this dryer load
+            cur.execute("""
+                SELECT ws.session_num, a.weight_allocated_g
+                FROM hash_lot_wash_to_freezedry_allocations a
+                JOIN hash_lot_wash_sessions ws ON ws.id = a.wash_session_id
+                WHERE a.freezedry_session_id = %s
+                ORDER BY ws.session_num
+            """, (session_id,))
+            wash_used = "; ".join(
+                f"S{r['session_num']}: {float(r['weight_allocated_g']):,.0f}g"
+                for r in cur.fetchall()
+            )
         conn.commit()
-        return {"session": dict(updated), "message": "Freeze-dry session closed"}
+
+        import asyncio
+        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "freezedry", {
+            "session_num":  updated["session_num"],
+            "operator":     updated["operator_name"],
+            "equipment":    updated["equipment_id"] or "",
+            "wash_used":    wash_used,
+            "input_wet":    float(updated["input_wet_weight_g"]) if updated["input_wet_weight_g"] is not None else "",
+            "output_dry":   float(updated["output_dry_weight_g"]) if updated["output_dry_weight_g"] is not None else "",
+            "pump_oil":     "Yes" if updated["pump_oil_checked"] else "No",
+            "started_at":   fmt_ts(updated["started_at"]) or "",
+            "completed_at": fmt_ts(updated["completed_at"]) or "",
+            "notes":        updated["notes"] or "",
+        }))
+
+        return {"session": updated, "message": "Freeze-dry session closed"}
     finally:
         conn.close()
 
@@ -2155,7 +2460,7 @@ def list_sift_sessions(hash_lot_id: str):
 
 
 @app.patch("/hash/sift-session/{session_id}")
-def close_sift_session(session_id: str, req: SiftSessionClose):
+async def close_sift_session(session_id: str, req: SiftSessionClose):
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -2170,8 +2475,35 @@ def close_sift_session(session_id: str, req: SiftSessionClose):
             updated = cur.fetchone()
             if not updated:
                 raise HTTPException(404, "Sift session not found")
+            updated = dict(updated)
+
+            # Which freeze-dry loads fed this sift
+            cur.execute("""
+                SELECT fd.session_num, a.weight_allocated_g
+                FROM hash_lot_freezedry_to_sift_allocations a
+                JOIN hash_lot_freezedry_sessions fd ON fd.id = a.freezedry_session_id
+                WHERE a.sift_session_id = %s
+                ORDER BY fd.session_num
+            """, (session_id,))
+            fd_used = "; ".join(
+                f"S{r['session_num']}: {float(r['weight_allocated_g']):,.0f}g"
+                for r in cur.fetchall()
+            )
         conn.commit()
-        return {"session": dict(updated), "message": "Sift session closed"}
+
+        import asyncio
+        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "sift", {
+            "session_num":  updated["session_num"],
+            "operator":     updated["operator_name"],
+            "fd_used":      fd_used,
+            "dry_in":       float(updated["dry_weight_in_g"]) if updated["dry_weight_in_g"] is not None else "",
+            "sift_out":     float(updated["sift_weight_out_g"]) if updated["sift_weight_out_g"] is not None else "",
+            "storage":      updated["storage_location"] or "",
+            "completed_at": fmt_ts(updated["completed_at"]) or "",
+            "notes":        updated["notes"] or "",
+        }))
+
+        return {"session": updated, "message": "Sift session closed"}
     finally:
         conn.close()
 
