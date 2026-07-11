@@ -1659,7 +1659,7 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     if not webhook_url:
         return
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             await client.post(webhook_url, json={
                 "action": "updateBPRStatus",
                 "uid": uid,
@@ -1796,7 +1796,7 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         return
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json={
                 "action": "writeBPRFields",
                 "uid":    uid,
@@ -1852,7 +1852,7 @@ async def _post_wash_gas(payload: dict, label: str):
         print(f"{label}: no GAS_WEBHOOK_URL — skipping")
         return
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json=payload)
             print(f"{label}: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
@@ -1957,9 +1957,11 @@ async def push_wash_phase_to_gas(uid: str, phase_id: str, phase_def: dict,
         passfail = "Pass"
         if phase_id == "sifting":
             y = ccp_values.get("1") if ccp_values.get("1") is not None else ccp_values.get(1)
-            try:
-                passfail = "Pass" if 0.5 <= float(y) <= 25 else "FAIL"
-            except (TypeError, ValueError):
+            import re as _re
+            m = _re.search(r"(\d+(?:\.\d+)?)\s*%", str(y or "")) or _re.search(r"(\d+(?:\.\d+)?)", str(y or ""))
+            if m:
+                passfail = "Pass" if 0.5 <= float(m.group(1)) <= 25 else "FAIL"
+            else:
                 passfail = "Pass" if y not in (None, "") else ""
         fields[prefix + "_PASSFAIL"] = passfail
 
