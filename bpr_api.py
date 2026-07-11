@@ -1,13 +1,40 @@
 """
-BatchD BPR — FastAPI backend
+BatchD BPR — FastAPI backend  (v2.0 — generic component lot system)
 Deploy alongside ManifestD on Railway.
 All BPR routes are prefixed /bpr
+
+WHAT CHANGED IN v2.0
+────────────────────
+• hash_lots is retired. The spine is now bpr_component_lots — a generic lot
+  table for ANY intermediate/component material (ice water hash, nanos,
+  edibles rosin, cured rosin, third-party distillate, etc.)
+• bpr_component_types is a registry: adding a new component type is an
+  INSERT, not a code deploy.
+• bpr_lot_transactions is a quantity ledger: every gram in or out is a row.
+  Current inventory = SUM(qty_delta). This is the audit trail and the
+  future METRC write-back surface.
+• All legacy /hash/* routes still work — they are thin wrappers over the
+  generic system, so the existing GAS wash page and BPR frontend keep
+  functioning unchanged. New clients should use /components/* routes.
+• NEW: /bpr/create now writes wash_bpr_id onto the component lot itself
+  (fixes the bug where wash_bpr_id was never populated).
+• NEW: lot creation status comes from the type registry's default_status
+  ('washing' for hash) instead of being hardcoded.
+
+DEPLOYMENT ORDER (do these back-to-back):
+  1. Deploy this file to Railway
+  2. Run the 10 FK re-aim statements (saved from planning session)
+  3. Rename hash_lots:  ALTER TABLE hash_lots RENAME TO zz_retired_hash_lots
+  4. Create a test wash batch end-to-end to verify
 
 Environment variables required (add to Railway):
   DATABASE_URL           — Railway Postgres connection string (already set for ManifestD)
   GAS_WEBHOOK_URL        — GAS doPost URL to ping on BPR completion
   GOOGLE_SERVICE_ACCOUNT — JSON string of service account credentials (for Drive PDF upload)
   DRIVE_COA_FOLDER_ID    — Root COA Archive folder ID (to find UID subfolders)
+
+TODO (dedicated security session): add API-key auth on all write routes,
+tighten CORS to the Netlify origin, add rate limiting.
 """
 
 from fastapi import FastAPI, HTTPException, Request
@@ -25,11 +52,11 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 from bpr_phases import BPR_PHASES, detect_product_family
 
-app = FastAPI(title="BatchD BPR API", version="1.0.0")
+app = FastAPI(title="BatchD BPR API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten to your Netlify/Railway frontend URL in production
+    allow_origins=["*"],   # TODO security session: tighten to Netlify/Railway frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,7 +66,7 @@ app.add_middleware(
 @app.get("/health")
 @app.get("/bpr/health")
 def health():
-    return {"status": "ok", "service": "BatchD BPR", "version": "1.0.0"}
+    return {"status": "ok", "service": "BatchD BPR", "version": "2.0.0"}
 
 # ── DB connection ─────────────────────────────────────────────────────────
 def get_db():
@@ -49,6 +76,12 @@ def get_db():
     )
 
 # ── Schema init ───────────────────────────────────────────────────────────
+# NOTE: hash_lots and hash_lot_usage are deliberately ABSENT from this schema.
+# They are retired. If they were still here as CREATE IF NOT EXISTS, a fresh
+# boot after the rename would silently recreate an empty ghost table.
+# Session/allocation/input tables now reference bpr_component_lots(lot_code)
+# so a fresh install (or future multi-tenant instance) builds correctly
+# from nothing.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bpr_records (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -98,48 +131,117 @@ CREATE INDEX IF NOT EXISTS idx_bpr_uid ON bpr_records(uid);
 CREATE INDEX IF NOT EXISTS idx_signoffs_bpr ON bpr_phase_signoffs(bpr_id);
 CREATE INDEX IF NOT EXISTS idx_steps_bpr_phase ON bpr_step_checks(bpr_id, phase_id);
 
-CREATE TABLE IF NOT EXISTS hash_lots (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id      TEXT NOT NULL UNIQUE,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    wash_bpr_id      UUID REFERENCES bpr_records(id),
-    primary_strain   TEXT,
-    is_mixed         BOOLEAN DEFAULT FALSE,
-    wet_weight_g     NUMERIC,
-    dry_weight_g     NUMERIC,
-    sift_weight_g    NUMERIC,
-    yield_pct        NUMERIC,
-    status           TEXT DEFAULT 'drying',
-    storage_location TEXT,
-    notes            TEXT
+-- ── Component type registry ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS bpr_component_types (
+    key                  TEXT PRIMARY KEY,
+    display_name         TEXT NOT NULL,
+    uid_prefix           TEXT NOT NULL,
+    is_produced_inhouse  BOOLEAN NOT NULL DEFAULT TRUE,
+    bpr_family           TEXT,
+    default_status       TEXT NOT NULL,
+    status_workflow      JSONB NOT NULL,
+    unit_of_measure      TEXT NOT NULL DEFAULT 'g',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Seed known types on fresh installs. ON CONFLICT DO NOTHING means existing
+-- rows (which you may have edited by hand) are never overwritten on boot.
+INSERT INTO bpr_component_types
+    (key, display_name, uid_prefix, is_produced_inhouse, bpr_family, default_status, status_workflow, unit_of_measure)
+VALUES
+    ('ice_water_hash', 'Ice Water Hash', 'HASH', TRUE, 'rosin_wash', 'washing',
+     '[{"key":"washing","label":"Ice Extraction"},{"key":"drying","label":"Freeze Drying"},{"key":"sifting","label":"Sifting"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('edibles_rosin', 'Edibles Rosin', 'EROSIN', TRUE, 'rosin_press', 'pressing',
+     '[{"key":"pressing","label":"Pressing"},{"key":"curing","label":"Curing"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('cured_rosin', 'Cured Rosin (AIO)', 'CROSIN', TRUE, 'rosin_press', 'pressing',
+     '[{"key":"pressing","label":"Pressing"},{"key":"curing","label":"Curing"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('nano_thc', 'NANO-THC', 'NANOTHC', TRUE, NULL, 'in_production',
+     '[{"key":"in_production","label":"In Production"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'ml'),
+    ('nano_cbn', 'NANO-CBN', 'NANOCBN', TRUE, NULL, 'in_production',
+     '[{"key":"in_production","label":"In Production"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'ml'),
+    ('distillate_3p', 'Distillate (3rd Party)', 'DIST', FALSE, NULL, 'received',
+     '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('bho_badder_3p', 'BHO Badder (3rd Party)', 'BADDER', FALSE, NULL, 'received',
+     '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('shatter_3p', 'Shatter (3rd Party)', 'SHATTER', FALSE, NULL, 'received',
+     '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g')
+ON CONFLICT (key) DO NOTHING;
+
+-- ── Generic component lots (the spine) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS bpr_component_lots (
+    id               BIGSERIAL PRIMARY KEY,
+    lot_code         TEXT NOT NULL UNIQUE,
+    component_type   TEXT NOT NULL REFERENCES bpr_component_types(key),
+    status           TEXT NOT NULL,
+    source           TEXT NOT NULL DEFAULT 'produced' CHECK (source IN ('produced','received')),
+    metrc_uid        TEXT,
+    strain           TEXT,
+    description      TEXT,
+    initial_qty      NUMERIC(12,3),
+    unit             TEXT NOT NULL DEFAULT 'g',
+    supplier         TEXT,
+    manifest_number  TEXT,
+    coa_ref          TEXT,
+    legacy_id        UUID UNIQUE,
+    storage_location TEXT,
+    sheet_url        TEXT,
+    type_data        JSONB NOT NULL DEFAULT '{}',
+    created_by       TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_component_lots_type_status ON bpr_component_lots (component_type, status);
+CREATE INDEX IF NOT EXISTS idx_component_lots_metrc_uid   ON bpr_component_lots (metrc_uid);
+
+-- ── Quantity ledger ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS bpr_lot_transactions (
+    id              BIGSERIAL PRIMARY KEY,
+    lot_id          BIGINT NOT NULL REFERENCES bpr_component_lots(id),
+    txn_type        TEXT NOT NULL CHECK (txn_type IN
+                        ('production','receipt','consumption','waste','adjustment','metrc_package')),
+    qty_delta       NUMERIC(12,3) NOT NULL,
+    unit            TEXT NOT NULL,
+    reference_type  TEXT,
+    reference_id    TEXT,
+    note            TEXT,
+    performed_by    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lot_txn_lot     ON bpr_lot_transactions (lot_id);
+CREATE INDEX IF NOT EXISTS idx_lot_txn_created ON bpr_lot_transactions (created_at);
+
+-- ── Live inventory view (dashboard reads this) ────────────────────────────
+CREATE OR REPLACE VIEW v_component_inventory AS
+SELECT
+    l.id, l.lot_code, l.component_type, t.display_name, l.status, l.source,
+    l.strain, l.metrc_uid,
+    COALESCE(SUM(x.qty_delta), 0) AS current_qty,
+    l.unit, l.storage_location, l.created_at
+FROM bpr_component_lots l
+JOIN bpr_component_types t ON t.key = l.component_type
+LEFT JOIN bpr_lot_transactions x ON x.lot_id = l.id
+GROUP BY l.id, t.display_name;
+
+-- ── Input materials for a lot (fresh frozen UIDs feeding a wash, etc.) ───
+-- Table keeps its legacy name for now; the hash_lot_id column holds the
+-- lot_code of ANY component lot. Rename pass can come later.
 CREATE TABLE IF NOT EXISTS hash_lot_inputs (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id      TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    hash_lot_id      TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
     fresh_frozen_uid TEXT NOT NULL,
     strain_name      TEXT,
     input_weight_g   NUMERIC,
     added_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS hash_lot_usage (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id      TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
-    press_bpr_id     UUID REFERENCES bpr_records(id),
-    press_metrc_uid  TEXT,
-    weight_used_g    NUMERIC,
-    used_at          TIMESTAMPTZ DEFAULT NOW()
-);
+CREATE INDEX IF NOT EXISTS idx_hash_inputs_lot ON hash_lot_inputs(hash_lot_id);
 
-CREATE INDEX IF NOT EXISTS idx_hash_lots_status ON hash_lots(status);
-CREATE INDEX IF NOT EXISTS idx_hash_inputs_lot  ON hash_lot_inputs(hash_lot_id);
-CREATE INDEX IF NOT EXISTS idx_hash_usage_lot   ON hash_lot_usage(hash_lot_id);
-CREATE INDEX IF NOT EXISTS idx_hash_usage_press ON hash_lot_usage(press_bpr_id);
-
+-- ── Multi-session pipeline tables (wash → freeze-dry → sift) ──────────────
 CREATE TABLE IF NOT EXISTS hash_lot_wash_sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id         TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    hash_lot_id         TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
     session_num         INT NOT NULL,
     operator_name       TEXT NOT NULL,
     equipment_id        TEXT,
@@ -155,7 +257,7 @@ CREATE TABLE IF NOT EXISTS hash_lot_wash_sessions (
 
 CREATE TABLE IF NOT EXISTS hash_lot_freezedry_sessions (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id           TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    hash_lot_id           TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
     session_num           INT NOT NULL,
     operator_name         TEXT NOT NULL,
     equipment_id          TEXT,
@@ -170,7 +272,7 @@ CREATE TABLE IF NOT EXISTS hash_lot_freezedry_sessions (
 
 CREATE TABLE IF NOT EXISTS hash_lot_sift_sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hash_lot_id         TEXT NOT NULL REFERENCES hash_lots(hash_lot_id),
+    hash_lot_id         TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
     session_num         INT NOT NULL,
     operator_name       TEXT NOT NULL,
     dry_weight_in_g     NUMERIC NOT NULL,
@@ -197,7 +299,6 @@ CREATE TABLE IF NOT EXISTS hash_lot_freezedry_to_sift_allocations (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for the lookups we'll hit constantly (fetching sessions for a lot, allocations for a session)
 CREATE INDEX IF NOT EXISTS idx_wash_sessions_lot       ON hash_lot_wash_sessions(hash_lot_id);
 CREATE INDEX IF NOT EXISTS idx_freezedry_sessions_lot  ON hash_lot_freezedry_sessions(hash_lot_id);
 CREATE INDEX IF NOT EXISTS idx_sift_sessions_lot       ON hash_lot_sift_sessions(hash_lot_id);
@@ -217,7 +318,7 @@ async def startup():
     finally:
         conn.close()
 
-# ── Pydantic models ───────────────────────────────────────────────────────
+# ── Pydantic models (BPR) ─────────────────────────────────────────────────
 
 class BPRCreateRequest(BaseModel):
     uid: str
@@ -225,7 +326,7 @@ class BPRCreateRequest(BaseModel):
     batch_id: Optional[str] = None
     mfg_date: Optional[str] = None
     category: Optional[str] = None
-    bpr_type: Optional[str] = None 
+    bpr_type: Optional[str] = None
 
 class StepCheckRequest(BaseModel):
     phase_id: str
@@ -264,7 +365,6 @@ class FreezeDrySessionCreate(BaseModel):
     started_at: Optional[str] = None
     pump_oil_checked: Optional[bool] = None
     notes: Optional[str] = None
-    # allocations: which wash sessions feed this load, and how much of each
     allocations: List[dict]  # [{"wash_session_id": "...", "weight_allocated_g": 4000}]
 
 class FreezeDrySessionClose(BaseModel):
@@ -275,37 +375,54 @@ class SiftSessionCreate(BaseModel):
     operator_name: str
     storage_location: Optional[str] = None
     notes: Optional[str] = None
-    # allocations: which freeze-dry sessions feed this sift, and how much of each
     allocations: List[dict]  # [{"freezedry_session_id": "...", "weight_allocated_g": 1200}]
 
 class SiftSessionClose(BaseModel):
     sift_weight_out_g: float
-    notes: Optional[str] = None    
+    notes: Optional[str] = None
 
-# ── Helper: now() UTC ─────────────────────────────────────────────────────
-def now_utc():
-    return datetime.now(timezone.utc).isoformat()
+# ── Pydantic models (component lots — generic) ────────────────────────────
 
-# ── Helper: format timestamp for display ─────────────────────────────────
-def fmt_ts(ts):
-    if not ts:
-        return None
-    if isinstance(ts, str):
-        return ts
-    return ts.strftime("%-m/%-d/%Y %-I:%M %p")
-
-# ── Hash lot Pydantic models ──────────────────────────────────────
-class HashLotInput(BaseModel):
+class LotInputMaterial(BaseModel):
     fresh_frozen_uid: str
     strain_name: Optional[str] = None
     input_weight_g: Optional[float] = None
+
+class ComponentLotCreate(BaseModel):
+    component_type: str                      # must exist in bpr_component_types
+    strain: Optional[str] = None
+    is_mixed: bool = False                   # affects lot code generation
+    description: Optional[str] = None
+    initial_qty: Optional[float] = None      # for received lots: opening balance
+    metrc_uid: Optional[str] = None          # for received lots: package tag
+    supplier: Optional[str] = None
+    manifest_number: Optional[str] = None
+    coa_ref: Optional[str] = None
+    storage_location: Optional[str] = None
+    created_by: Optional[str] = None
+    type_data: Optional[dict] = None         # type-specific extras (wet_weight_g, etc.)
+    inputs: List[LotInputMaterial] = []      # source materials feeding this lot
+
+class ComponentStatusUpdate(BaseModel):
+    status: str
+
+class LotTransactionCreate(BaseModel):
+    txn_type: str                            # production/receipt/consumption/waste/adjustment/metrc_package
+    qty_delta: float                         # signed: positive adds, negative subtracts
+    unit: Optional[str] = None               # defaults to the lot's unit
+    reference_type: Optional[str] = None
+    reference_id: Optional[str] = None
+    note: Optional[str] = None
+    performed_by: Optional[str] = None
+
+# ── Legacy hash-lot request models (kept for /hash/* compatibility) ───────
 
 class HashLotCreateRequest(BaseModel):
     wash_bpr_id: Optional[str] = None
     primary_strain: str
     is_mixed: bool = False
     wet_weight_g: Optional[float] = None
-    inputs: List[HashLotInput]
+    inputs: List[LotInputMaterial]
 
 class HashLotWeightsRequest(BaseModel):
     dry_weight_g: Optional[float] = None
@@ -323,118 +440,430 @@ class HashLotAssignUidRequest(BaseModel):
     metrc_uid: str
     sheet_url: Optional[str] = None
 
-# ── Hash lot ID generator ─────────────────────────────────────────
-def generate_hash_lot_id(strain_name: str, is_mixed: bool, conn) -> str:
-    from datetime import date
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+def now_utc():
+    return datetime.now(timezone.utc).isoformat()
+
+def fmt_ts(ts):
+    if not ts:
+        return None
+    if isinstance(ts, str):
+        return ts
+    return ts.strftime("%-m/%-d/%Y %-I:%M %p")
+
+def get_component_type(cur, type_key: str) -> dict:
+    """Fetch a component type from the registry, or 404."""
+    cur.execute("SELECT * FROM bpr_component_types WHERE key = %s", (type_key,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"Unknown component type: {type_key}")
+    return dict(row)
+
+def workflow_keys(type_row: dict) -> list:
+    """
+    Extract the list of valid status keys from a type's status_workflow.
+    Handles both formats: ["drying", ...] and [{"key":"drying","label":...}, ...]
+    so hand-edited registry rows never crash the API.
+    """
+    wf = type_row.get("status_workflow") or []
+    keys = []
+    for item in wf:
+        if isinstance(item, dict):
+            keys.append(item.get("key"))
+        else:
+            keys.append(item)
+    return [k for k in keys if k]
+
+def get_lot(cur, lot_code: str) -> dict:
+    """Fetch a component lot by its lot_code, or 404."""
+    cur.execute("SELECT * FROM bpr_component_lots WHERE lot_code = %s", (lot_code,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"Lot not found: {lot_code}")
+    return dict(row)
+
+def lot_to_legacy(lot: dict) -> dict:
+    """
+    Presents a component lot in the shape the old hash_lots rows had, so
+    existing GAS pages and the BPR frontend keep working without changes.
+    type_data fields (wet_weight_g etc.) are lifted to the top level and
+    lot_code is mirrored as hash_lot_id.
+    """
+    td = lot.get("type_data") or {}
+    if isinstance(td, str):
+        try: td = json.loads(td)
+        except Exception: td = {}
+    out = dict(lot)
+    out["hash_lot_id"]   = lot["lot_code"]
+    out["primary_strain"] = lot.get("strain")
+    for k in ("is_mixed", "wet_weight_g", "dry_weight_g",
+              "sift_weight_g", "yield_pct", "wash_bpr_id"):
+        if k not in out or out.get(k) is None:
+            out[k] = td.get(k)
+    return out
+
+def lot_balance(cur, lot_id: int) -> float:
+    """Current inventory for a lot = sum of its ledger deltas."""
+    cur.execute(
+        "SELECT COALESCE(SUM(qty_delta), 0) AS bal FROM bpr_lot_transactions WHERE lot_id = %s",
+        (lot_id,)
+    )
+    return float(cur.fetchone()["bal"])
+
+def add_transaction(cur, lot: dict, txn_type: str, qty_delta: float,
+                    unit: Optional[str] = None, reference_type: Optional[str] = None,
+                    reference_id: Optional[str] = None, note: Optional[str] = None,
+                    performed_by: Optional[str] = None) -> dict:
+    """
+    Insert a ledger transaction. For negative deltas (consumption/waste), the
+    lot row is locked with FOR UPDATE first so two simultaneous pulls can't
+    both pass the overdraw check — the second caller waits for the first to
+    commit, then sees the updated balance. This locking is what keeps the
+    ledger honest at 12-15 concurrent users.
+    """
+    if qty_delta < 0:
+        cur.execute("SELECT id FROM bpr_component_lots WHERE id = %s FOR UPDATE", (lot["id"],))
+        bal = lot_balance(cur, lot["id"])
+        if bal + qty_delta < 0:
+            raise HTTPException(400, {
+                "message": f"Insufficient balance on {lot['lot_code']}",
+                "current_balance": bal,
+                "requested": abs(qty_delta)
+            })
+    cur.execute("""
+        INSERT INTO bpr_lot_transactions
+            (lot_id, txn_type, qty_delta, unit, reference_type, reference_id, note, performed_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING *
+    """, (lot["id"], txn_type, qty_delta, unit or lot["unit"],
+          reference_type, reference_id, note, performed_by))
+    return dict(cur.fetchone())
+
+def generate_lot_code(cur, type_row: dict, strain: Optional[str], is_mixed: bool) -> str:
+    """
+    Generic lot code generator: {PREFIX}-{STRAINCODE}-{MMDD}-{SEQ}.
+    Prefix comes from the type registry, so ice water hash keeps producing
+    HASH-... codes and nanos produce NANOTHC-... codes with zero extra logic.
+    Known limitation (acceptable for now): two truly simultaneous creates for
+    the same prefix could collide on SEQ; the UNIQUE constraint on lot_code
+    rejects the loser, and the retry in create_component_lot_internal handles it.
+    """
     import re
-    today = date.today()
-    mmdd  = today.strftime("%m%d")
+    from datetime import date
+    mmdd = date.today().strftime("%m%d")
 
     if is_mixed:
         strain_code = "MIXED"
-    else:
-        clean = re.sub(r'[^A-Z0-9]', '', strain_name.upper())
+    elif strain:
+        clean = re.sub(r'[^A-Z0-9]', '', strain.upper())
         strain_code = clean[:6] if clean else "UNKNWN"
+    else:
+        strain_code = "GEN"   # strainless types (nanos, distillate)
 
-    prefix = f"HASH-{strain_code}-{mmdd}"
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT COUNT(*) as cnt FROM hash_lots WHERE hash_lot_id LIKE %s",
-            (f"{prefix}-%",)
-        )
-        count = cur.fetchone()["cnt"]
-
-    seq = str(count + 1).zfill(2)
+    prefix = f"{type_row['uid_prefix']}-{strain_code}-{mmdd}"
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM bpr_component_lots WHERE lot_code LIKE %s",
+        (f"{prefix}-%",)
+    )
+    seq = str(cur.fetchone()["cnt"] + 1).zfill(2)
     return f"{prefix}-{seq}"
 
+def create_component_lot_internal(conn, req: ComponentLotCreate) -> dict:
+    """
+    Shared creation logic used by BOTH POST /components (new generic route)
+    and POST /hash/create (legacy wrapper). One implementation, two doors —
+    which is exactly why records look identical no matter which UI made them.
+    """
+    with conn.cursor() as cur:
+        type_row = get_component_type(cur, req.component_type)
 
-# ── POST /hash/create ─────────────────────────────────────────────
-@app.post("/hash/create")
-def create_hash_lot(req: HashLotCreateRequest):
+        status = type_row["default_status"]
+        source = "produced" if type_row["is_produced_inhouse"] else "received"
+
+        # Retry once on lot-code collision (see generate_lot_code note)
+        lot = None
+        for attempt in range(2):
+            lot_code = generate_lot_code(cur, type_row, req.strain, req.is_mixed)
+            try:
+                cur.execute("""
+                    INSERT INTO bpr_component_lots
+                        (lot_code, component_type, status, source, metrc_uid, strain,
+                         description, initial_qty, unit, supplier, manifest_number,
+                         coa_ref, storage_location, type_data, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *
+                """, (
+                    lot_code, req.component_type, status, source, req.metrc_uid,
+                    req.strain, req.description, req.initial_qty,
+                    type_row["unit_of_measure"], req.supplier, req.manifest_number,
+                    req.coa_ref, req.storage_location,
+                    json.dumps(req.type_data or {}), req.created_by
+                ))
+                lot = dict(cur.fetchone())
+                break
+            except psycopg2.errors.UniqueViolation:
+                conn.rollback()  # clear the failed statement, try next sequence number
+                if attempt == 1:
+                    raise HTTPException(409, "Lot code collision — please retry")
+
+        # Input materials (fresh frozen UIDs for hash; source packages for others)
+        for inp in req.inputs:
+            cur.execute("""
+                INSERT INTO hash_lot_inputs
+                    (hash_lot_id, fresh_frozen_uid, strain_name, input_weight_g)
+                VALUES (%s, %s, %s, %s)
+            """, (lot["lot_code"], inp.fresh_frozen_uid, inp.strain_name, inp.input_weight_g))
+
+        # Received lots arrive with a known quantity — open the ledger with a receipt
+        if source == "received" and req.initial_qty:
+            add_transaction(cur, lot, "receipt", req.initial_qty,
+                            reference_type="manifest",
+                            reference_id=req.manifest_number,
+                            note="Opening balance from received manifest",
+                            performed_by=req.created_by)
+    conn.commit()
+    return lot
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NEW GENERIC COMPONENT ROUTES  (/components/*)
+# The webapp's future +New Batch flow and the GAS sidebar should both call
+# these. Legacy /hash/* routes below wrap the same internals.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/components/types")
+def list_component_types():
+    """Registry listing — frontends build their type dropdowns from this."""
     conn = get_db()
     try:
-        hash_lot_id = generate_hash_lot_id(req.primary_strain, req.is_mixed, conn)
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO hash_lots
-                    (hash_lot_id, wash_bpr_id, primary_strain, is_mixed, wet_weight_g)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING *
-            """, (hash_lot_id, req.wash_bpr_id, req.primary_strain,
-                  req.is_mixed, req.wet_weight_g))
-            lot = dict(cur.fetchone())
+            cur.execute("SELECT * FROM bpr_component_types ORDER BY display_name")
+            types = [dict(r) for r in cur.fetchall()]
+        return {"types": types, "count": len(types)}
+    finally:
+        conn.close()
 
-            for inp in req.inputs:
-                cur.execute("""
-                    INSERT INTO hash_lot_inputs
-                        (hash_lot_id, fresh_frozen_uid, strain_name, input_weight_g)
-                    VALUES (%s, %s, %s, %s)
-                """, (hash_lot_id, inp.fresh_frozen_uid,
-                      inp.strain_name, inp.input_weight_g))
-        conn.commit()
+
+@app.post("/components")
+def create_component_lot(req: ComponentLotCreate):
+    conn = get_db()
+    try:
+        lot = create_component_lot_internal(conn, req)
         return {
-            "hash_lot_id": hash_lot_id,
+            "lot_code": lot["lot_code"],
             "lot": lot,
-            "message": f"Hash lot created: {hash_lot_id}. Write this on the vacuum seal bag."
+            "message": f"Component lot created: {lot['lot_code']}. Label the container now."
         }
     finally:
         conn.close()
 
 
-# ── GET /hash/available ───────────────────────────────────────────
-@app.get("/hash/available")
-def get_available_hash_lots():
+@app.get("/components/inventory")
+def get_component_inventory(component_type: Optional[str] = None,
+                            status: Optional[str] = None):
+    """
+    The fast dashboard read. Postgres answers this in milliseconds — this is
+    the endpoint that replaces the slow GAS SpreadsheetApp dashboard loads.
+    Optional filters: ?component_type=ice_water_hash&status=available
+    """
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT h.*,
-                    json_agg(json_build_object(
-                        'fresh_frozen_uid', i.fresh_frozen_uid,
-                        'strain_name',      i.strain_name,
-                        'input_weight_g',   i.input_weight_g
-                    )) as inputs
-                FROM hash_lots h
-                LEFT JOIN hash_lot_inputs i ON i.hash_lot_id = h.hash_lot_id
-                WHERE h.status = 'available'
-                GROUP BY h.id
-                ORDER BY h.created_at DESC
-            """)
+            query = "SELECT * FROM v_component_inventory WHERE 1=1"
+            params = []
+            if component_type:
+                query += " AND component_type = %s"
+                params.append(component_type)
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+            query += " ORDER BY created_at DESC"
+            cur.execute(query, params)
             lots = [dict(r) for r in cur.fetchall()]
         return {"lots": lots, "count": len(lots)}
     finally:
         conn.close()
 
 
-# ── GET /hash/{hash_lot_id} ───────────────────────────────────────
-# NOTE: This must come AFTER /hash/available to avoid route conflict
+@app.get("/components/{lot_code}")
+def get_component_lot(lot_code: str):
+    """Full detail for one lot: record, inputs, ledger history, balance."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, lot_code)
+
+            cur.execute("SELECT * FROM hash_lot_inputs WHERE hash_lot_id = %s", (lot_code,))
+            inputs = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT * FROM bpr_lot_transactions
+                WHERE lot_id = %s ORDER BY created_at
+            """, (lot["id"],))
+            transactions = [dict(r) for r in cur.fetchall()]
+
+            balance = lot_balance(cur, lot["id"])
+
+        return {
+            "lot": lot,
+            "inputs": inputs,
+            "transactions": transactions,
+            "current_qty": balance,
+        }
+    finally:
+        conn.close()
+
+
+@app.patch("/components/{lot_code}/status")
+def update_component_status(lot_code: str, req: ComponentStatusUpdate):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, lot_code)
+            type_row = get_component_type(cur, lot["component_type"])
+            valid = workflow_keys(type_row)
+            if req.status not in valid:
+                # Friendly, type-aware error — this is why validation lives in
+                # the API instead of a DB trigger
+                raise HTTPException(400,
+                    f"'{req.status}' is not a valid status for "
+                    f"{type_row['display_name']}. Valid: {valid}")
+
+            cur.execute("""
+                UPDATE bpr_component_lots SET status = %s, updated_at = NOW()
+                WHERE lot_code = %s RETURNING *
+            """, (req.status, lot_code))
+            updated = dict(cur.fetchone())
+        conn.commit()
+        return {"lot": updated, "message": f"{lot_code} status → {req.status}"}
+    finally:
+        conn.close()
+
+
+@app.post("/components/{lot_code}/transactions")
+def create_lot_transaction(lot_code: str, req: LotTransactionCreate):
+    """
+    Record material movement: production yield in, consumption out, waste,
+    corrections. This is THE way inventory changes — never by editing a
+    quantity column, always by appending to the ledger.
+    """
+    valid_types = {"production", "receipt", "consumption", "waste", "adjustment", "metrc_package"}
+    if req.txn_type not in valid_types:
+        raise HTTPException(400, f"Invalid txn_type. Must be one of: {sorted(valid_types)}")
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, lot_code)
+            txn = add_transaction(cur, lot, req.txn_type, req.qty_delta,
+                                  unit=req.unit,
+                                  reference_type=req.reference_type,
+                                  reference_id=req.reference_id,
+                                  note=req.note,
+                                  performed_by=req.performed_by)
+            balance = lot_balance(cur, lot["id"])
+
+            # Auto-deplete: when a consumption/waste takes the balance to zero,
+            # flip status so the dashboard stops offering this lot
+            if balance <= 0 and req.qty_delta < 0 and "depleted" in workflow_keys(
+                    get_component_type(cur, lot["component_type"])):
+                cur.execute(
+                    "UPDATE bpr_component_lots SET status = 'depleted', updated_at = NOW() WHERE id = %s",
+                    (lot["id"],)
+                )
+        conn.commit()
+        return {"transaction": txn, "current_qty": balance}
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LEGACY /hash/* ROUTES — thin wrappers over the generic system.
+# The GAS wash page and BPR frontend call these today; they keep working
+# unchanged. New code should prefer /components/*.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.post("/hash/create")
+def create_hash_lot(req: HashLotCreateRequest):
+    conn = get_db()
+    try:
+        generic_req = ComponentLotCreate(
+            component_type="ice_water_hash",
+            strain=req.primary_strain,
+            is_mixed=req.is_mixed,
+            type_data={
+                "is_mixed": req.is_mixed,
+                "wet_weight_g": req.wet_weight_g,
+                "wash_bpr_id": req.wash_bpr_id,
+            },
+            inputs=req.inputs,
+        )
+        lot = create_component_lot_internal(conn, generic_req)
+        legacy = lot_to_legacy(lot)
+        return {
+            "hash_lot_id": legacy["hash_lot_id"],
+            "lot": legacy,
+            "message": f"Hash lot created: {legacy['hash_lot_id']}. Write this on the vacuum seal bag."
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/hash/available")
+def get_available_hash_lots():
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            # Same shape as before, plus current_qty from the ledger so the
+            # press handoff screen can show how much hash actually remains
+            cur.execute("""
+                SELECT l.*,
+                    COALESCE(bal.qty, 0) AS current_qty,
+                    json_agg(json_build_object(
+                        'fresh_frozen_uid', i.fresh_frozen_uid,
+                        'strain_name',      i.strain_name,
+                        'input_weight_g',   i.input_weight_g
+                    )) FILTER (WHERE i.id IS NOT NULL) AS inputs
+                FROM bpr_component_lots l
+                LEFT JOIN hash_lot_inputs i ON i.hash_lot_id = l.lot_code
+                LEFT JOIN LATERAL (
+                    SELECT SUM(qty_delta) AS qty FROM bpr_lot_transactions t
+                    WHERE t.lot_id = l.id
+                ) bal ON TRUE
+                WHERE l.component_type = 'ice_water_hash' AND l.status = 'available'
+                GROUP BY l.id, bal.qty
+                ORDER BY l.created_at DESC
+            """)
+            lots = [lot_to_legacy(dict(r)) for r in cur.fetchall()]
+        return {"lots": lots, "count": len(lots)}
+    finally:
+        conn.close()
+
+
+# NOTE: must stay AFTER /hash/available (first-registered route wins on conflicts)
 @app.get("/hash/{hash_lot_id}")
 def get_hash_lot(hash_lot_id: str):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,)
-            )
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
-            lot = dict(lot)
+            lot = get_lot(cur, hash_lot_id)
 
-            cur.execute(
-                "SELECT * FROM hash_lot_inputs WHERE hash_lot_id = %s", (hash_lot_id,)
-            )
+            cur.execute("SELECT * FROM hash_lot_inputs WHERE hash_lot_id = %s", (hash_lot_id,))
             inputs = [dict(r) for r in cur.fetchall()]
 
-            cur.execute(
-                "SELECT * FROM hash_lot_usage WHERE hash_lot_id = %s ORDER BY used_at",
-                (hash_lot_id,)
-            )
+            # "usage" now comes from the ledger (consumption transactions),
+            # presented in the old hash_lot_usage shape for compatibility
+            cur.execute("""
+                SELECT id, reference_id AS press_bpr_id, note AS press_metrc_uid,
+                       ABS(qty_delta) AS weight_used_g, created_at AS used_at
+                FROM bpr_lot_transactions
+                WHERE lot_id = %s AND txn_type = 'consumption'
+                ORDER BY created_at
+            """, (lot["id"],))
             usage = [dict(r) for r in cur.fetchall()]
 
         return {
-            "lot": lot,
+            "lot": lot_to_legacy(lot),
             "inputs": inputs,
             "usage": usage,
             "traceability": {
@@ -446,41 +875,63 @@ def get_hash_lot(hash_lot_id: str):
         conn.close()
 
 
-# ── PATCH /hash/{hash_lot_id}/weights ────────────────────────────
 @app.patch("/hash/{hash_lot_id}/weights")
 def update_hash_weights(hash_lot_id: str, req: HashLotWeightsRequest):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,)
-            )
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            lot = get_lot(cur, hash_lot_id)
+            td = lot.get("type_data") or {}
+            if isinstance(td, str):
+                td = json.loads(td)
 
+            # Yield % computed from stored wet weight, like before
             yield_pct = None
-            wet  = lot["wet_weight_g"]
+            wet = td.get("wet_weight_g")
             sift = req.sift_weight_g
-            if wet and sift and wet > 0:
-                yield_pct = round((sift / wet) * 100, 2)
+            if wet and sift and float(wet) > 0:
+                yield_pct = round((float(sift) / float(wet)) * 100, 2)
+
+            # Merge new values into type_data (COALESCE semantics: only
+            # overwrite what was provided)
+            patch = {}
+            if req.dry_weight_g is not None:  patch["dry_weight_g"] = req.dry_weight_g
+            if req.sift_weight_g is not None: patch["sift_weight_g"] = req.sift_weight_g
+            if yield_pct is not None:         patch["yield_pct"] = yield_pct
 
             cur.execute("""
-                UPDATE hash_lots SET
-                    dry_weight_g     = COALESCE(%s, dry_weight_g),
-                    sift_weight_g    = COALESCE(%s, sift_weight_g),
-                    yield_pct        = COALESCE(%s, yield_pct),
+                UPDATE bpr_component_lots SET
+                    type_data        = type_data || %s::jsonb,
                     storage_location = COALESCE(%s, storage_location),
-                    notes            = COALESCE(%s, notes),
-                    status           = 'available'
-                WHERE hash_lot_id = %s
+                    description      = COALESCE(%s, description),
+                    status           = 'available',
+                    updated_at       = NOW()
+                WHERE lot_code = %s
                 RETURNING *
-            """, (req.dry_weight_g, req.sift_weight_g, yield_pct,
-                  req.storage_location, req.notes, hash_lot_id))
+            """, (json.dumps(patch), req.storage_location, req.notes, hash_lot_id))
             updated = dict(cur.fetchone())
+
+            # LEDGER: the sift weigh-in is the moment inventory is born.
+            # We insert the DELTA vs. any previously recorded production so
+            # calling this endpoint twice (e.g. correcting a weight) adjusts
+            # rather than double-counts.
+            if req.sift_weight_g is not None:
+                cur.execute("""
+                    SELECT COALESCE(SUM(qty_delta), 0) AS produced
+                    FROM bpr_lot_transactions
+                    WHERE lot_id = %s AND txn_type = 'production'
+                """, (lot["id"],))
+                already = float(cur.fetchone()["produced"])
+                delta = float(req.sift_weight_g) - already
+                if delta != 0:
+                    add_transaction(cur, lot, "production", delta,
+                                    reference_type="sift_weighin",
+                                    reference_id=hash_lot_id,
+                                    note="Sift yield recorded" if already == 0
+                                         else "Sift yield corrected")
         conn.commit()
         return {
-            "lot": updated,
+            "lot": lot_to_legacy(updated),
             "yield_pct": yield_pct,
             "message": f"{hash_lot_id} updated — status set to available"
         }
@@ -488,42 +939,61 @@ def update_hash_weights(hash_lot_id: str, req: HashLotWeightsRequest):
         conn.close()
 
 
-# ── PATCH /hash/{hash_lot_id}/status ─────────────────────────────
 @app.patch("/hash/{hash_lot_id}/status")
 def update_hash_status(hash_lot_id: str, req: HashLotStatusRequest):
-    valid = {"available", "in_use", "depleted", "drying"}
-    if req.status not in valid:
-        raise HTTPException(400, f"Invalid status. Must be one of: {valid}")
-
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE hash_lots SET status = %s WHERE hash_lot_id = %s RETURNING *",
-                (req.status, hash_lot_id)
-            )
-            updated = cur.fetchone()
-            if not updated:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            lot = get_lot(cur, hash_lot_id)
+            type_row = get_component_type(cur, lot["component_type"])
+            valid = workflow_keys(type_row)
+            if req.status not in valid:
+                raise HTTPException(400, f"Invalid status. Must be one of: {valid}")
 
-            if req.status == "in_use" and req.press_bpr_id:
-                cur.execute("""
-                    INSERT INTO hash_lot_usage
-                        (hash_lot_id, press_bpr_id, press_metrc_uid, weight_used_g)
-                    VALUES (%s, %s, %s, %s)
-                """, (hash_lot_id, req.press_bpr_id,
-                      req.press_metrc_uid, req.weight_used_g))
+            cur.execute("""
+                UPDATE bpr_component_lots SET status = %s, updated_at = NOW()
+                WHERE lot_code = %s RETURNING *
+            """, (req.status, hash_lot_id))
+            updated = dict(cur.fetchone())
+
+            # Press pulling hash → a consumption transaction in the ledger
+            # (replaces the old hash_lot_usage insert, with overdraw protection)
+            if req.status == "in_use" and req.press_bpr_id and req.weight_used_g:
+                add_transaction(cur, lot, "consumption", -abs(req.weight_used_g),
+                                reference_type="press_bpr",
+                                reference_id=req.press_bpr_id,
+                                note=req.press_metrc_uid)
         conn.commit()
         return {
-            "lot": dict(updated),
+            "lot": lot_to_legacy(updated),
             "message": f"{hash_lot_id} status → {req.status}"
         }
     finally:
         conn.close()
 
+
+@app.patch("/hash/{hash_lot_id}/assign-uid")
+def assign_uid_to_hash_lot(hash_lot_id: str, req: HashLotAssignUidRequest):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, hash_lot_id)
+            if lot["metrc_uid"]:
+                raise HTTPException(400, f"Hash lot already has a METRC UID: {lot['metrc_uid']}")
+
+            cur.execute("""
+                UPDATE bpr_component_lots SET metrc_uid = %s, sheet_url = %s, updated_at = NOW()
+                WHERE lot_code = %s RETURNING *
+            """, (req.metrc_uid, req.sheet_url, hash_lot_id))
+            updated = dict(cur.fetchone())
+        conn.commit()
+        return {"lot": lot_to_legacy(updated),
+                "message": f"METRC UID {req.metrc_uid} assigned to {hash_lot_id}"}
+    finally:
+        conn.close()
+
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/phases
-# Returns all supported product families and their phase structures
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/phases")
 def get_all_phases():
@@ -531,7 +1001,6 @@ def get_all_phases():
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/phases/{family}
-# Returns phase structure for a specific product family
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/phases/{family}")
 def get_phases(family: str):
@@ -542,6 +1011,7 @@ def get_phases(family: str):
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/create
 # Initializes a BPR record. Idempotent — returns existing if UID already has one.
+# NEW in v2.0: writes the BPR id back onto the component lot (wash_bpr_id fix)
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/create")
 def create_bpr(req: BPRCreateRequest):
@@ -581,6 +1051,16 @@ def create_bpr(req: BPRCreateRequest):
                         ON CONFLICT DO NOTHING
                     """, (record["id"], req.uid, phase["id"], i))
 
+            # ── wash_bpr_id fix ─────────────────────────────────────────
+            # For wash BPRs the uid IS the lot code. Link the BPR to its
+            # component lot server-side so the frontend can never forget to.
+            # Harmless no-op if no matching lot exists (finished-goods BPRs).
+            cur.execute("""
+                UPDATE bpr_component_lots
+                SET type_data = type_data || %s::jsonb, updated_at = NOW()
+                WHERE lot_code = %s
+            """, (json.dumps({"wash_bpr_id": str(record["id"])}), req.uid))
+
         conn.commit()
         return {
             "created": True,
@@ -593,7 +1073,6 @@ def create_bpr(req: BPRCreateRequest):
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/{uid}
-# Returns full BPR state: record + all signoffs + all step checks
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}")
 def get_bpr(uid: str):
@@ -619,10 +1098,8 @@ def get_bpr(uid: str):
             family = record["product_family"]
             definition = BPR_PHASES.get(family, {})
 
-            # Build signoff map: phase_id -> signoff object
             signoff_map = {s["phase_id"]: s for s in signoffs}
 
-            # Build step check map: phase_id:step_index -> checked bool
             step_map = {}
             for s in steps:
                 key = f"{s['phase_id']}:{s['step_index']}"
@@ -644,7 +1121,6 @@ def get_bpr(uid: str):
 
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/{uid}/step
-# Toggle a step check on/off
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/{uid}/step")
 def update_step(uid: str, req: StepCheckRequest):
@@ -677,8 +1153,6 @@ def update_step(uid: str, req: StepCheckRequest):
 
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/{uid}/phase/signoff
-# Sign off an entire phase — requires all non-CCP steps checked,
-# all CCP values provided
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/{uid}/phase/signoff")
 async def phase_signoff(uid: str, req: PhaseSignoffRequest):
@@ -695,12 +1169,10 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
             family = rec["product_family"]
             definition = BPR_PHASES[family]
 
-            # Find the phase definition
             phase_def = next((p for p in definition["phases"] if p["id"] == req.phase_id), None)
             if not phase_def:
                 raise HTTPException(404, f"Phase {req.phase_id} not found in {family} template")
 
-            # Validate all steps are checked
             cur.execute("""
                 SELECT step_index, checked FROM bpr_step_checks
                 WHERE bpr_id = %s AND phase_id = %s
@@ -715,7 +1187,6 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
                     "unchecked_steps": unchecked
                 })
 
-            # Validate CCP values provided for CCP steps
             ccps = phase_def.get("ccps", [])
             ccp_values = req.ccp_values or {}
             missing_ccps = [i for i in ccps if str(i) not in ccp_values and i not in ccp_values]
@@ -727,11 +1198,9 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
                     "missing_ccps": missing_labels
                 })
 
-            # Validate notes if required
             if phase_def.get("notes_required") and not (req.notes or "").strip():
                 raise HTTPException(400, {"message": "Notes are required before signing off this phase"})
 
-            # Write signoff
             cur.execute("""
                 INSERT INTO bpr_phase_signoffs
                     (bpr_id, uid, phase_id, phase_name, employee_name, notes, ccp_values)
@@ -753,10 +1222,9 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
                         (now_utc(), uid))
         conn.commit()
         # ── Write phase data back to Google Sheet BPR ────────────
-        # Get step checks for this phase to include in write-back
         with conn.cursor() as cur2:
             cur2.execute("""
-                SELECT * FROM bpr_step_checks 
+                SELECT * FROM bpr_step_checks
                 WHERE bpr_id = %s AND phase_id = %s
                 ORDER BY step_index
             """, (rec["id"], req.phase_id))
@@ -784,8 +1252,6 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
 
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/{uid}/release
-# Supervisor release — completes the BPR, triggers PDF generation
-# and Drive upload, pings GAS webhook
 # ─────────────────────────────────────────────────────────────────────────
 @app.post("/bpr/{uid}/release")
 async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
@@ -802,7 +1268,6 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
             family = rec["product_family"]
             definition = BPR_PHASES[family]
 
-            # Confirm all phases are signed off
             cur.execute("""
                 SELECT phase_id FROM bpr_phase_signoffs WHERE bpr_id = %s
             """, (rec["id"],))
@@ -816,7 +1281,6 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
                     "unsigned_phases": phase_names
                 })
 
-            # Get all signoffs for PDF
             cur.execute("""
                 SELECT * FROM bpr_phase_signoffs WHERE bpr_id = %s ORDER BY signed_at
             """, (rec["id"],))
@@ -827,7 +1291,6 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
             """, (rec["id"],))
             steps = [dict(r) for r in cur.fetchall()]
 
-            # Mark as completed
             cur.execute("""
                 UPDATE bpr_records SET
                     status = 'completed',
@@ -873,7 +1336,6 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/{uid}/status
-# Quick status check — used by GAS batch detail page
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}/status")
 def get_bpr_status(uid: str):
@@ -1147,13 +1609,11 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
         )
         service = build("drive", "v3", credentials=creds)
 
-        # Find the UID subfolder inside COA Archive
         root_folder_id = os.environ.get("DRIVE_COA_FOLDER_ID")
         if not root_folder_id:
             print("No DRIVE_COA_FOLDER_ID env var — skipping Drive upload")
             return None
 
-        # Search for UID folder
         results = service.files().list(
             q=f"name='{uid}' and '{root_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
             fields="files(id, name)"
@@ -1161,7 +1621,6 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
         folders = results.get("files", [])
 
         if not folders:
-            # Create UID folder
             folder_meta = {
                 "name": uid,
                 "mimeType": "application/vnd.google-apps.folder",
@@ -1172,7 +1631,6 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
         else:
             folder_id = folders[0]["id"]
 
-        # Upload PDF
         filename = f"BPR_{batch_id or uid}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
         file_meta = {"name": filename, "parents": [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype="application/pdf")
@@ -1187,27 +1645,6 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
         print(f"Drive upload error (non-fatal): {e}")
         return None
 
-@app.patch("/hash/{hash_lot_id}/assign-uid")
-def assign_uid_to_hash_lot(hash_lot_id: str, req: HashLotAssignUidRequest):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
-            if lot["metrc_uid"]:
-                raise HTTPException(400, f"Hash lot already has a METRC UID: {lot['metrc_uid']}")
-
-            cur.execute("""
-                UPDATE hash_lots SET metrc_uid = %s, sheet_url = %s
-                WHERE hash_lot_id = %s RETURNING *
-            """, (req.metrc_uid, req.sheet_url, hash_lot_id))
-            updated = dict(cur.fetchone())
-        conn.commit()
-        return {"lot": updated, "message": f"METRC UID {req.metrc_uid} assigned to {hash_lot_id}"}
-    finally:
-        conn.close()
 
 async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     """
@@ -1227,7 +1664,7 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     except Exception as e:
         print(f"GAS webhook ping failed (non-fatal): {e}")
 
-async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict, 
+async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
                                   signoff: dict, steps: list, product_family: str):
     """
     Builds the named-range field map from a completed phase signoff
@@ -1252,44 +1689,23 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
     # CCP-only mapping: (phase_id, step_index) -> Section 4 sheet row number (1-21)
     # Verified against actual BPR sheet Step Description column
     LIVE_ROSIN_CCP_ROW_MAP = {
-        # Row 1  — Verify washers/bags/trays cleaned (pre_production step 2 = equipment clean)
         ("pre_production", 2):  1,
-        # Row 2  — Verify fresh frozen COA, record METRC UID, strain, input weight
         ("pre_production", 1):  2,
-        # Row 3  — Tea bags at 4,000g wet weight on certified scale
         ("ice_water_wash", 0):  3,
-        # Row 4  — Load washers with ice and water
         ("ice_water_wash", 1):  4,
-        # Row 5  — Run 2 full wash cycles, record start/end times
         ("ice_water_wash", 2):  5,
-        # Row 6  — Drain water, collect hash on tray
         ("ice_water_wash", 3):  6,
-        # Row 7  — Record WET WEIGHT of hash on tray
         ("ice_water_wash", 6):  7,
-        # Row 8  — Cannabis by-product in waste receptacle, record in Waste Log
         ("ice_water_wash", 9):  8,
-        # Row 9  — Check pump oil, insert trays into freeze dryer ≤35°F
         ("freeze_drying",  3):  9,
-        # Row 10 — Inspect periodically, break up thick portions
         ("freeze_drying",  4): 10,
-        # Row 11 — Sift dried hash, record DRY SIFT WEIGHT
         ("freeze_drying",  6): 11,
-        # Row 12 — Open valve, defrost, vacuum seal, store in freezer
         ("freeze_drying",  7): 12,
-        # Row 13 — No CCP marker (mold hash into rectangles) — skip
-        # Row 14 — Preheat rosin press to 162°F
         ("pressing",       2): 14,
-        # Row 15 — Press with foot trigger
         ("pressing",       3): 15,
-        # Row 16 — Weigh rosin yield, record press waste
         ("pressing",       6): 16,
-        # Row 17 — Wipe CR jars, calibrate scale, weigh 1.0–1.05g per jar
         ("packaging",      1): 17,
-        # Row 18 — No CCP (apply CR cap) — skip
-        # Row 19 — Apply required info sticker, all 5 fields, supervisor approval
         ("packaging",      4): 19,
-        # Row 20 — No CCP (post-production clean-down) — skip
-        # Row 21 — METRC manufacturing activity entry within 24 hours
         ("sanitation",     6): 21,
     }
 
@@ -1297,16 +1713,14 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
     signed_at = fmt_ts(signoff.get("signed_at")) or ""
     employee  = signoff.get("employee_name") or ""
 
-    # Parse CCP values once
     ccp_values = signoff.get("ccp_values") or {}
     if isinstance(ccp_values, str):
         try: ccp_values = json.loads(ccp_values)
         except: ccp_values = {}
 
-    # Write only CCP steps to Section 4 named ranges
     for (p_id, step_idx), sheet_row in LIVE_ROSIN_CCP_ROW_MAP.items():
         if p_id != phase_id:
-            continue  # only process rows belonging to current phase
+            continue
 
         val = ccp_values.get(str(step_idx)) or ccp_values.get(step_idx) or ""
         prefix = f"ROSIN_S4_STEP{sheet_row}"
@@ -1333,27 +1747,27 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
     # Section 6 CCP monitoring rows — verified against sheet CCP list
     PHASE_CCP_MAP = {
         "ice_water_wash": {
-            0: 1,   # Tea bag fill weight → CCP 1
-            2: 3,   # Wash cycles completed → CCP 3
-            6: 4,   # Wet weight recorded → CCP 4
-            9: 5,   # Cannabis waste logged → CCP 5
+            0: 1,
+            2: 3,
+            6: 4,
+            9: 5,
         },
         "freeze_drying": {
-            3: 6,   # Freeze dryer temp ≤35°F → CCP 6
-            3: 7,   # Pump oil level checked → CCP 7
-            6: 8,   # Dry sift weight recorded → CCP 8
+            3: 6,
+            3: 7,
+            6: 8,
         },
         "pressing": {
-            2: 9,   # Rosin press temp → CCP 9
-            6: 10,  # Rosin yield weight → CCP 10
-            6: 11,  # Press waste logged → CCP 11
+            2: 9,
+            6: 10,
+            6: 11,
         },
         "packaging": {
-            1: 12,  # Jar fill weight spot-check → CCP 12
-            4: 13,  # Label all 5 fields → CCP 13
+            1: 12,
+            4: 13,
         },
         "pre_production": {
-            2: 2,   # RO water confirmed → CCP 2
+            2: 2,
         },
     }
 
@@ -1388,13 +1802,9 @@ def create_wash_session(hash_lot_id: str, req: WashSessionCreate):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            # Confirm lot exists
-            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            # Confirm lot exists (component table is the spine now)
+            get_lot(cur, hash_lot_id)
 
-            # Next session number for this lot
             cur.execute(
                 "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
                 "FROM hash_lot_wash_sessions WHERE hash_lot_id = %s",
@@ -1416,11 +1826,8 @@ def create_wash_session(hash_lot_id: str, req: WashSessionCreate):
             ))
             session = dict(cur.fetchone())
 
-            # Move lot status to 'washing' if it isn't further along already
-            cur.execute(
-                "UPDATE hash_lots SET status = 'washing' WHERE hash_lot_id = %s AND status = 'drying'",
-                (hash_lot_id,)
-            )
+            # Lots are now created in 'washing' status, so no status bump is
+            # needed here — the wash session simply belongs to the wash stage.
         conn.commit()
         return {"session": session, "message": f"Wash session {session_num} logged"}
     finally:
@@ -1499,10 +1906,7 @@ def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            get_lot(cur, hash_lot_id)
 
             if not req.allocations:
                 raise HTTPException(400, "At least one wash session allocation is required")
@@ -1536,7 +1940,6 @@ def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
                     })
                 total_input += weight
 
-            # Next session number
             cur.execute(
                 "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
                 "FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s",
@@ -1544,7 +1947,6 @@ def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
             )
             session_num = cur.fetchone()["next_num"]
 
-            # Create the freeze-dry session
             cur.execute("""
                 INSERT INTO hash_lot_freezedry_sessions
                     (hash_lot_id, session_num, operator_name, equipment_id,
@@ -1557,7 +1959,6 @@ def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
             ))
             fd_session = dict(cur.fetchone())
 
-            # Write the allocations
             for alloc in req.allocations:
                 cur.execute("""
                     INSERT INTO hash_lot_wash_to_freezedry_allocations
@@ -1565,9 +1966,9 @@ def create_freezedry_session(hash_lot_id: str, req: FreezeDrySessionCreate):
                     VALUES (%s, %s, %s)
                 """, (alloc["wash_session_id"], fd_session["id"], alloc["weight_allocated_g"]))
 
-            # Move lot status forward
+            # First dryer load moves the lot from washing → drying
             cur.execute(
-                "UPDATE hash_lots SET status = 'drying' WHERE hash_lot_id = %s",
+                "UPDATE bpr_component_lots SET status = 'drying', updated_at = NOW() WHERE lot_code = %s",
                 (hash_lot_id,)
             )
         conn.commit()
@@ -1658,15 +2059,11 @@ def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
+            get_lot(cur, hash_lot_id)
 
             if not req.allocations:
                 raise HTTPException(400, "At least one freeze-dry session allocation is required")
 
-            # Validate each allocation against remaining unallocated dry weight
             total_input = 0
             for alloc in req.allocations:
                 fd_id = alloc["freezedry_session_id"]
@@ -1697,7 +2094,6 @@ def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
                     })
                 total_input += weight
 
-            # Next session number
             cur.execute(
                 "SELECT COALESCE(MAX(session_num), 0) + 1 as next_num "
                 "FROM hash_lot_sift_sessions WHERE hash_lot_id = %s",
@@ -1705,7 +2101,6 @@ def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
             )
             session_num = cur.fetchone()["next_num"]
 
-            # Create the sift session
             cur.execute("""
                 INSERT INTO hash_lot_sift_sessions
                     (hash_lot_id, session_num, operator_name,
@@ -1718,7 +2113,6 @@ def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
             ))
             sift_session = dict(cur.fetchone())
 
-            # Write the allocations
             for alloc in req.allocations:
                 cur.execute("""
                     INSERT INTO hash_lot_freezedry_to_sift_allocations
@@ -1726,9 +2120,8 @@ def create_sift_session(hash_lot_id: str, req: SiftSessionCreate):
                     VALUES (%s, %s, %s)
                 """, (alloc["freezedry_session_id"], sift_session["id"], alloc["weight_allocated_g"]))
 
-            # Move lot status forward
             cur.execute(
-                "UPDATE hash_lots SET status = 'sifting' WHERE hash_lot_id = %s",
+                "UPDATE bpr_component_lots SET status = 'sifting', updated_at = NOW() WHERE lot_code = %s",
                 (hash_lot_id,)
             )
         conn.commit()
@@ -1791,11 +2184,7 @@ def get_lot_reconciliation(hash_lot_id: str):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM hash_lots WHERE hash_lot_id = %s", (hash_lot_id,))
-            lot = cur.fetchone()
-            if not lot:
-                raise HTTPException(404, f"Hash lot not found: {hash_lot_id}")
-            lot = dict(lot)
+            lot = get_lot(cur, hash_lot_id)
 
             cur.execute("""
                 SELECT COUNT(*) as count, COALESCE(SUM(wet_weight_g), 0) as total_wet_weight_g,
@@ -1822,7 +2211,6 @@ def get_lot_reconciliation(hash_lot_id: str):
             """, (hash_lot_id,))
             sift_summary = dict(cur.fetchone())
 
-            # All fresh-frozen UIDs across every wash session, deduplicated
             cur.execute("""
                 SELECT DISTINCT unnest(fresh_frozen_uids) as uid
                 FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
@@ -1841,7 +2229,7 @@ def get_lot_reconciliation(hash_lot_id: str):
 
         return {
             "hash_lot_id": hash_lot_id,
-            "lot": lot,
+            "lot": lot_to_legacy(lot),
             "wash": wash_summary,
             "freeze_dry": freezedry_summary,
             "sift": sift_summary,
