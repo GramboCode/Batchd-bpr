@@ -2473,6 +2473,7 @@ def detect_product_family(item_name: str, category: str = "",
        "510" in n or "vape" in n:               return "vapes"
 
     # Category fallback
+    if c == "rosin_wash":                        return "rosin_wash"
     if "concentrate" in c or "rosin" in c:       return "rosin_press"
     if "vape" in c or "cartridge" in c:          return "vapes"
     if "edible" in c:                            return "gummies"

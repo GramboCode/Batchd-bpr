@@ -13,6 +13,7 @@ function getParams() {
     batchId:     p.get("batchId")     || p.get("batch_id")    || "",
     mfgDate:     p.get("mfgDate")     || p.get("mfg_date")    || "",
     category:    p.get("category")    || "",
+    bprType:     p.get("bprType")     || p.get("bpr_type")    || "",
     returnUrl:   p.get("returnUrl")   || "",
   };
 }
@@ -74,6 +75,7 @@ export default function App() {
           batch_id:     params.batchId,
           mfg_date:     params.mfgDate,
           category:     params.category,
+          bpr_type:     params.bprType,
         }),
       });
 
