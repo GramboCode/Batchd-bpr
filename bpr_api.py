@@ -1593,7 +1593,18 @@ async def generate_and_upload_pdf(bpr: dict, definition: dict, signoffs: list, s
 
 async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional[str]:
     """
-    Uploads BPR PDF to the UID's subfolder inside COA Archive on Google Drive.
+    Uploads the released-BPR PDF to the batch's UID subfolder inside COA
+    Archive on Google Drive.
+
+    Two behaviors worth knowing:
+    1. Folders are keyed by the SOURCE METRC UID (UID_TRACKER col B). Wash
+       BPRs use the lot code (HASH-...) as their uid, so we resolve the lot's
+       real METRC tag first — otherwise we'd mint stray HASH-named folders
+       next to the proper tag-named ones.
+    2. All Drive calls pass supportsAllDrives=True so this works whether COA
+       Archive lives in My Drive or a Shared Drive. NOTE: the upload itself
+       will 403 ("Service Accounts do not have storage quota") until the
+       folder is inside a Shared Drive — that's Google policy, not a bug here.
     """
     try:
         import google.auth
@@ -1619,28 +1630,55 @@ async def upload_to_drive(pdf_bytes: bytes, uid: str, batch_id: str) -> Optional
             print("No DRIVE_COA_FOLDER_ID env var — skipping Drive upload")
             return None
 
+        # ── Resolve the folder key: lot code → source METRC UID ──────────
+        # Finished-goods BPRs already use the tag as uid, so the lookup
+        # simply finds no lot and falls through to uid unchanged.
+        folder_key = uid
+        try:
+            _conn = get_db()
+            try:
+                with _conn.cursor() as _cur:
+                    _cur.execute(
+                        "SELECT metrc_uid FROM bpr_component_lots WHERE lot_code = %s",
+                        (uid,)
+                    )
+                    _row = _cur.fetchone()
+                    if _row and _row["metrc_uid"]:
+                        folder_key = _row["metrc_uid"]
+            finally:
+                _conn.close()
+        except Exception as _e:
+            print(f"folder key lookup failed, using uid as-is: {_e}")
+
+        # ── Find (or create) the UID subfolder ───────────────────────────
         results = service.files().list(
-            q=f"name='{uid}' and '{root_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-            fields="files(id, name)"
+            q=f"name='{folder_key}' and '{root_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields="files(id, name)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
         ).execute()
         folders = results.get("files", [])
 
         if not folders:
             folder_meta = {
-                "name": uid,
+                "name": folder_key,
                 "mimeType": "application/vnd.google-apps.folder",
                 "parents": [root_folder_id]
             }
-            folder = service.files().create(body=folder_meta, fields="id").execute()
+            folder = service.files().create(
+                body=folder_meta, fields="id", supportsAllDrives=True
+            ).execute()
             folder_id = folder["id"]
         else:
             folder_id = folders[0]["id"]
 
+        # ── Upload the PDF ────────────────────────────────────────────────
         filename = f"BPR_{batch_id or uid}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
         file_meta = {"name": filename, "parents": [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype="application/pdf")
         file = service.files().create(
-            body=file_meta, media_body=media, fields="id, webViewLink"
+            body=file_meta, media_body=media, fields="id, webViewLink",
+            supportsAllDrives=True
         ).execute()
 
         print(f"BPR PDF uploaded: {file.get('webViewLink')}")
@@ -1659,7 +1697,7 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     if not webhook_url:
         return
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             await client.post(webhook_url, json={
                 "action": "updateBPRStatus",
                 "uid": uid,
