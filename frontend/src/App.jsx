@@ -18,7 +18,21 @@ function getParams() {
   };
 }
 
-export const API_BASE = import.meta.env.VITE_API_URL || "https://your-railway-app.railway.app";
+export const API_BASE = import.meta.env.VITE_API_URL || "https://batchd-bpr-production.up.railway.app";
+// ── API key: attach to every request aimed at our backend ─────────────
+// Wrapping fetch once covers every call site in the app (BPRForm,
+// SessionLogPhase, SanitationLogWash, ...) — only URLs starting with
+// API_BASE are decorated, so any third-party fetches stay untouched.
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  if (typeof url === "string" && url.startsWith(API_BASE)) {
+    opts = {
+      ...opts,
+      headers: { ...(opts.headers || {}), "X-API-Key": import.meta.env.VITE_BATCHD_API_KEY || "" },
+    };
+  }
+  return _origFetch(url, opts);
+};
 
 export default function App() {
   const [view, setView] = useState("loading"); // loading | form | complete | error
