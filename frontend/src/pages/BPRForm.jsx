@@ -29,7 +29,8 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
   }, [bprData]);
 
   const uid = params.uid;
-
+  const family = bprData?.family || bprData?.bpr?.product_family || null;
+  
   // ── Step check toggle ─────────────────────────────────────────────────
   async function toggleStep(phaseId, stepIndex, checked, employeeName) {
     const key = `${phaseId}:${stepIndex}`;

@@ -462,12 +462,17 @@ class SanitationLogRequest(BaseModel):
 def now_utc():
     return datetime.now(timezone.utc).isoformat()
 
+from zoneinfo import ZoneInfo
+LOCAL_TZ = ZoneInfo("America/Los_Angeles")
+
 def fmt_ts(ts):
     if not ts:
         return None
     if isinstance(ts, str):
         return ts
-    return ts.strftime("%-m/%-d/%Y %-I:%M %p")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)   # naive DB values are UTC
+    return ts.astimezone(LOCAL_TZ).strftime("%-m/%-d/%Y %-I:%M %p")
 
 def get_component_type(cur, type_key: str) -> dict:
     """Fetch a component type from the registry, or 404."""
