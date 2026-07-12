@@ -1,0 +1,199 @@
+/* Dashboard.css — Components Dashboard + Lot Detail
+   Matches the Punch aesthetic: red accent, dark ink, condensed headers. */
+
+.dash-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+  font-family: 'Barlow', -apple-system, system-ui, sans-serif;
+  color: #1A1D2E;
+}
+
+.dash-loading, .dash-error, .dash-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: #8890A8;
+  font-size: 0.95rem;
+}
+.dash-error { color: #E8192C; }
+
+/* ── Header ── */
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.dash-kicker {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #E8192C;
+}
+.dash-title {
+  margin: 2px 0 0;
+  font-size: 1.9rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.lot-sub { margin-top: 6px; font-size: 0.9rem; color: #4A5068; }
+
+.dash-totals { display: flex; gap: 10px; flex-wrap: wrap; }
+.dash-total-chip {
+  background: #F4F6FA;
+  border: 1.5px solid #E2E6EF;
+  border-radius: 10px;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.dash-total-num { font-size: 1.25rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.dash-total-unit { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8890A8; }
+
+/* ── Filters ── */
+.dash-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  border: 1.5px solid #D0D5E3;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #4A5068;
+  cursor: pointer;
+  font-family: inherit;
+}
+.chip-sm { padding: 4px 11px; font-size: 0.76rem; }
+.chip-on { background: #1A1D2E; border-color: #1A1D2E; color: #fff; }
+.chip:hover:not(.chip-on) { border-color: #8890A8; }
+
+.dash-search {
+  border: 1.5px solid #D0D5E3;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  max-width: 380px;
+}
+.dash-search:focus { outline: none; border-color: #E8192C; }
+
+/* ── Table ── */
+.dash-table-wrap { overflow-x: auto; border: 1.5px solid #E2E6EF; border-radius: 12px; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+.dash-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8890A8;
+  background: #F8F9FC;
+  padding: 10px 12px;
+  border-bottom: 1.5px solid #E2E6EF;
+  white-space: nowrap;
+}
+.dash-table td { padding: 11px 12px; border-bottom: 1px solid #EFF1F7; vertical-align: middle; }
+.dash-table tr:last-child td { border-bottom: none; }
+.dash-row { cursor: pointer; }
+.dash-row:hover td { background: #FAFBFE; }
+
+.num { text-align: right; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.82rem; }
+.strong { font-weight: 700; }
+.dim { color: #8890A8; }
+.qty-zero { color: #C3C9D9; }
+
+/* ── Status pills — keyed to machine status ── */
+.status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #EFF1F7;
+  color: #4A5068;
+}
+.st-washing      { background: #E0F2FE; color: #0369A1; }
+.st-drying       { background: #FEF3C7; color: #B45309; }
+.st-sifting      { background: #FDE68A; color: #92400E; }
+.st-available    { background: #D1FAE5; color: #0A7A3E; }
+.st-in_use       { background: #EDE9FE; color: #6D28D9; }
+.st-depleted     { background: #F1F2F6; color: #9AA1B5; }
+.st-received     { background: #E0F2FE; color: #0369A1; }
+.st-qc_hold      { background: #FEE2E2; color: #B91C1C; }
+.st-in_production{ background: #E0F2FE; color: #0369A1; }
+
+/* ── Lot detail ── */
+.lot-facts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0 22px;
+}
+.fact {
+  background: #F8F9FC;
+  border: 1px solid #E2E6EF;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: #1A1D2E;
+  text-decoration: none;
+}
+.fact span {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8890A8;
+}
+.fact-link:hover { border-color: #E8192C; color: #E8192C; }
+
+.lot-section { margin-top: 26px; }
+.lot-h2 {
+  font-size: 0.95rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #E8192C;
+  display: inline-block;
+}
+
+/* ── Ledger txn pills ── */
+.txn-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.txn-production    { background: #D1FAE5; color: #0A7A3E; }
+.txn-receipt       { background: #E0F2FE; color: #0369A1; }
+.txn-consumption   { background: #FEE2E2; color: #B91C1C; }
+.txn-waste         { background: #FEF3C7; color: #B45309; }
+.txn-adjustment    { background: #EDE9FE; color: #6D28D9; }
+.txn-metrc_package { background: #F1F2F6; color: #4A5068; }
+
+.delta-pos { color: #0A7A3E; }
+.delta-neg { color: #B91C1C; }
+
+@media (max-width: 640px) {
+  .dash-title { font-size: 1.4rem; }
+  .dash-table { font-size: 0.8rem; }
+  .dash-table th, .dash-table td { padding: 8px; }
+}

@@ -1,8 +1,18 @@
+// App.jsx — BatchD frontend root
+// v2: react-router structure. Routes:
+//   /                        → Components Dashboard (or BPR flow if ?uid= present —
+//                              printed QR codes deep-link to the root URL and must
+//                              keep working forever)
+//   /components/:lotCode     → Lot detail (ledger view)
+//   /bpr                     → BPR flow, explicit path (same query params as root)
 import { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import BPRForm from "./pages/BPRForm";
 import BPRComplete from "./pages/BPRComplete";
 import BPRError from "./pages/BPRError";
 import BPRLoading from "./pages/BPRLoading";
+import Dashboard from "./pages/Dashboard";
+import LotDetail from "./pages/LotDetail";
 
 // ── Read URL params ────────────────────────────────────────────────────────
 function getParams() {
@@ -19,10 +29,10 @@ function getParams() {
 }
 
 export const API_BASE = import.meta.env.VITE_API_URL || "https://batchd-bpr-production.up.railway.app";
+
 // ── API key: attach to every request aimed at our backend ─────────────
-// Wrapping fetch once covers every call site in the app (BPRForm,
-// SessionLogPhase, SanitationLogWash, ...) — only URLs starting with
-// API_BASE are decorated, so any third-party fetches stay untouched.
+// Wrapping fetch once covers every call site in the app — only URLs
+// starting with API_BASE are decorated; third-party fetches untouched.
 const _origFetch = window.fetch.bind(window);
 window.fetch = (url, opts = {}) => {
   if (typeof url === "string" && url.startsWith(API_BASE)) {
@@ -34,7 +44,8 @@ window.fetch = (url, opts = {}) => {
   return _origFetch(url, opts);
 };
 
-export default function App() {
+// ── The original param-driven BPR flow, unchanged, as its own component ──
+function BPRFlow() {
   const [view, setView] = useState("loading"); // loading | form | complete | error
   const [bprData, setBprData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -56,12 +67,10 @@ export default function App() {
 
   async function initBPR() {
     try {
-      // First check if BPR already exists
       const statusRes = await fetch(`${API_BASE}/bpr/${params.uid}/status`);
       const statusData = await statusRes.json();
 
       if (statusData.exists && statusData.status === "completed") {
-        // Already done — show complete screen
         const fullRes = await fetch(`${API_BASE}/bpr/${params.uid}`);
         const fullData = await fullRes.json();
         setBprData(fullData);
@@ -70,7 +79,6 @@ export default function App() {
       }
 
       if (statusData.exists) {
-        // In progress — load it
         const fullRes = await fetch(`${API_BASE}/bpr/${params.uid}`);
         if (!fullRes.ok) throw new Error("Failed to load existing BPR");
         const fullData = await fullRes.json();
@@ -79,7 +87,6 @@ export default function App() {
         return;
       }
 
-      // Create new BPR
       const createRes = await fetch(`${API_BASE}/bpr/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,14 +121,35 @@ export default function App() {
   }
 
   if (view === "loading") return <BPRLoading />;
-  if (view === "error")   return <BPRError message={errorMsg} params={params} />;
-  if (view === "complete") return <BPRComplete bprData={bprData} params={params} />;
-  if (view === "form")    return (
+  if (view === "error")   return <BPRError message={errorMsg} params={getParams()} />;
+  if (view === "complete") return <BPRComplete bprData={bprData} params={getParams()} />;
+  return (
     <BPRForm
       bprData={bprData}
       setBprData={setBprData}
-      params={params}
+      params={getParams()}
       onComplete={onComplete}
     />
+  );
+}
+
+// ── Root route: QR deep links (with ?uid=) get the BPR flow; bare visits
+//    get the dashboard. This is what keeps every printed QR working. ──────
+function RootRoute() {
+  const location = useLocation();
+  const hasUid = new URLSearchParams(location.search).get("uid");
+  return hasUid ? <BPRFlow /> : <Dashboard />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<RootRoute />} />
+        <Route path="/bpr" element={<BPRFlow />} />
+        <Route path="/components/:lotCode" element={<LotDetail />} />
+        <Route path="*" element={<Dashboard />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
