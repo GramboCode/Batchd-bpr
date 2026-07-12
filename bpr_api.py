@@ -54,13 +54,38 @@ from bpr_phases import BPR_PHASES, detect_product_family
 
 app = FastAPI(title="BatchD BPR API", version="2.1.0")
 
+# ── CORS: only our own frontends may call from a browser ────────────────
+# Netlify app + GAS-served pages (which load from rotating
+# *.googleusercontent.com subdomains, hence the regex) + local dev.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # TODO security session: tighten to Netlify/Railway frontend URLs
+    allow_origins=[
+        "https://batchd-bpr.netlify.app",
+        "http://localhost:5173",
+    ],
+    allow_origin_regex=r"https://.*\.googleusercontent\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── API key gate ─────────────────────────────────────────────────────────
+# Every request must carry X-API-Key matching the BATCHD_API_KEY env var.
+# Exemptions: /health (uptime checks), and OPTIONS (CORS preflights never
+# carry custom headers — blocking them would break the browser clients).
+# If BATCHD_API_KEY is unset the gate stands down, so a missing variable
+# degrades to "open" loudly in the logs rather than bricking production.
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in ("/health", "/bpr/health"):
+        return await call_next(request)
+    expected = os.environ.get("BATCHD_API_KEY")
+    if not expected:
+        print("WARNING: BATCHD_API_KEY not set — API is OPEN")
+        return await call_next(request)
+    if request.headers.get("X-API-Key") != expected:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    return await call_next(request)
 
 # ── Health check — defined FIRST to avoid being swallowed by /bpr/{uid} ──
 @app.get("/health")
@@ -1781,7 +1806,8 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
                 "action": "updateBPRStatus",
                 "uid": uid,
                 "bprStatus": status,
-                "pdfUrl": pdf_url
+                "pdfUrl": pdf_url,
+                "secret": os.environ.get("GAS_SHARED_SECRET", ""),
             })
     except Exception as e:
         print(f"GAS webhook ping failed (non-fatal): {e}")
@@ -1915,11 +1941,12 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         return
 
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json={
                 "action": "writeBPRFields",
                 "uid":    uid,
-                "fields": fields
+                "fields": fields,
+                "secret": os.environ.get("GAS_SHARED_SECRET", ""),
             })
             print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
@@ -1979,6 +2006,7 @@ async def _post_wash_gas(payload: dict, label: str):
     if not webhook_url:
         print(f"{label}: no GAS_WEBHOOK_URL — skipping")
         return
+    payload["secret"] = os.environ.get("GAS_SHARED_SECRET", "")   # auth for doPost guard
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json=payload)
