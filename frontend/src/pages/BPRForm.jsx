@@ -258,6 +258,9 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
                   isSigned={!!signoffs[phase.id]}
                   signoff={signoffs[phase.id]}
                   stepChecks={stepChecks}
+                  family={family}
+                  uid={params.batchId}
+                  apiBase={API_BASE}
                   onToggle={(stepIdx, checked, name) =>
                     toggleStep(phase.id, stepIdx, checked, name)
                   }

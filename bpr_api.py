@@ -440,6 +440,23 @@ class HashLotAssignUidRequest(BaseModel):
     metrc_uid: str
     sheet_url: Optional[str] = None
 
+class SanitationEntry(BaseModel):
+    row: int                          # equipment row 1-7, matching the sheet
+    date: Optional[str] = None        # "07/12/2026"
+    clean_start: Optional[str] = None # "08:00"
+    clean_end: Optional[str] = None   # "08:15"
+    ppm: Optional[str] = None         # tested ppm ("200"), or "" for water/ISO rows
+    strips_used: Optional[str] = None # "Yes" / "No" / ""
+    passed: Optional[str] = None      # "Yes" / "No"
+    cleaned_by: Optional[str] = None
+    dry_before_use: Optional[str] = None  # "Yes" / "No"
+
+class SanitationLogRequest(BaseModel):
+    entries: List[SanitationEntry]
+
+
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def now_utc():
@@ -991,6 +1008,63 @@ def assign_uid_to_hash_lot(hash_lot_id: str, req: HashLotAssignUidRequest):
                 "message": f"METRC UID {req.metrc_uid} assigned to {hash_lot_id}"}
     finally:
         conn.close()
+
+@app.post("/hash/{hash_lot_id}/sanitation")
+async def submit_wash_sanitation(hash_lot_id: str, req: SanitationLogRequest):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, hash_lot_id)   # 404 if unknown lot
+    finally:
+        conn.close()
+
+    sheet_url = lot.get("sheet_url")
+    if not sheet_url:
+        raise HTTPException(400, f"No BPR sheet on record for {hash_lot_id}")
+
+    fields = {}
+    incomplete = []
+    for e in req.entries:
+        if not (1 <= e.row <= 7):
+            raise HTTPException(400, f"Invalid sanitation row: {e.row} (must be 1-7)")
+
+        # Skip rows the operator left fully blank (not every run touches
+        # every surface) — but a PARTIALLY filled row is a §17210(c)
+        # violation waiting to happen, so reject those loudly.
+        provided = [e.date, e.clean_start, e.clean_end, e.passed, e.cleaned_by]
+        if not any(provided):
+            continue
+        if not (e.date and e.clean_start and e.clean_end and e.cleaned_by):
+            incomplete.append(e.row)
+            continue
+
+        p = f"WASH_S5_ROW{e.row}"
+        fields[p + "_DATE"]      = e.date
+        fields[p + "_START"]     = e.clean_start
+        fields[p + "_END"]       = e.clean_end
+        fields[p + "_PPM"]       = e.ppm or ""
+        fields[p + "_STRIPS"]    = e.strips_used or ""
+        fields[p + "_PASS"]      = e.passed or ""
+        fields[p + "_CLEANEDBY"] = e.cleaned_by
+        fields[p + "_DRYBEFORE"] = e.dry_before_use or ""
+
+    if incomplete:
+        raise HTTPException(400, {
+            "message": "Sanitation rows missing required fields (date, start, end, cleaned by are all required — §17210(c))",
+            "incomplete_rows": incomplete
+        })
+    if not fields:
+        raise HTTPException(400, "No sanitation entries provided")
+
+    await _post_wash_gas({
+        "action":   "writeWashBPRFields",
+        "uid":      hash_lot_id,
+        "sheetUrl": sheet_url,
+        "fields":   fields,
+    }, "wash sanitation log")
+
+    return {"success": True, "rows_written": len(fields) // 8,
+            "message": "Sanitation log submitted to BPR sheet"}        
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/phases
@@ -1784,6 +1858,8 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         fields[prefix + "_VALUE"]    = val
         fields[prefix + "_PASSFAIL"] = "Pass" if val else ""
 
+        
+
     # Section 5 — yield fields
     if phase_id == "qc_yield":
         fields["ROSIN_S5_YIELD_ACTUAL"]  = ccp_values.get("4") or ccp_values.get(4) or ""
@@ -1865,6 +1941,15 @@ WASH_S6_PER_STEP_ROWS = {
 # per-session detail lives in the Session Log tab, not Section 6.
 WASH_S6_SUMMARY_ROWS = {"ice_water_wash": 9, "freeze_drying": 10, "sifting": 11}
 
+
+# ── Section 4: equipment rows attested by existing pre-production steps ──
+# Many-to-one: one app checkbox covers several equipment rows.
+# step_index → list of S4 equipment row numbers (1-6 on the sheet)
+WASH_S4_FROM_STEPS = {
+    2: [1, 4, 5, 6],  # "Verify all equipment clean..." → Washer, Scale*, Sift Screens, Vac Sealer
+    3: [2],           # "Inspect bubble bags"           → Bubble Bags
+    4: [3],           # "Freeze dryer pre-cooled/oil"   → Freeze Dryer(s)
+}
 
 def _get_wash_sheet_url(lot_code: str) -> Optional[str]:
     """
@@ -1966,6 +2051,18 @@ async def push_wash_phase_to_gas(uid: str, phase_id: str, phase_def: dict,
         fields[prefix + "_OP1"]      = sd.get("checked_by") or employee
         fields[prefix + "_VERIFIED"] = "✓" if sd.get("checked") else ""
 
+    # Section 4 equipment rows: fan out the pre-production attestations
+    if phase_id == "pre_production":
+        for step_idx, s4_rows in WASH_S4_FROM_STEPS.items():
+            sd = step_map.get(step_idx, {})
+            if not sd.get("checked"):
+                continue
+            when = fmt_ts(sd.get("checked_at")) or signed_at
+            for r in s4_rows:
+                p = f"WASH_S4_ROW{r}"
+                fields[p + "_CHECKEDBY"] = sd.get("checked_by") or employee
+                fields[p + "_TIME"]      = when
+
     # Multi-session phases: one summary row, detail lives in the Session Log
     sheet_row = WASH_S6_SUMMARY_ROWS.get(phase_id)
     if sheet_row:
@@ -2032,8 +2129,8 @@ async def push_wash_session_row(lot_code: str, block: str, row: dict):
 
 async def push_wash_release_summary(uid: str, supervisor_name: str):
     """
-    At supervisor release, writes the Section 2 source-material summary and
-    the Section 3 yield rollups (WASH_S2_* / WASH_S3_* named ranges).
+    At supervisor release: Section 2 source summary, Section 3 yield
+    rollups, and Section 8 auto-verifiable QC checks (rows 2-6).
     """
     sheet_url = _get_wash_sheet_url(uid)
     if not sheet_url:
@@ -2044,10 +2141,14 @@ async def push_wash_release_summary(uid: str, supervisor_name: str):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT COUNT(*) AS n, COALESCE(SUM(wet_weight_g),0) AS wet
+                SELECT COUNT(*) AS n, COALESCE(SUM(wet_weight_g),0) AS wet,
+                       COUNT(*) FILTER (WHERE fresh_frozen_uids IS NULL
+                                        OR COALESCE(array_length(fresh_frozen_uids,1),0) = 0) AS missing_uids,
+                       COUNT(*) FILTER (WHERE ro_water_confirmed IS NOT TRUE) AS no_ro
                 FROM hash_lot_wash_sessions WHERE hash_lot_id = %s
             """, (uid,))
             wash = cur.fetchone()
+
             cur.execute("""
                 SELECT COUNT(DISTINCT u) AS n FROM (
                     SELECT unnest(fresh_frozen_uids) AS u
@@ -2055,16 +2156,24 @@ async def push_wash_release_summary(uid: str, supervisor_name: str):
                 ) x
             """, (uid,))
             ff = cur.fetchone()
+
             cur.execute("""
-                SELECT COALESCE(SUM(output_dry_weight_g),0) AS dry
+                SELECT COUNT(*) AS n, COALESCE(SUM(output_dry_weight_g),0) AS dry,
+                       COUNT(*) FILTER (WHERE pump_oil_checked IS NOT TRUE) AS no_oil
                 FROM hash_lot_freezedry_sessions WHERE hash_lot_id = %s
             """, (uid,))
             fd = cur.fetchone()
+
             cur.execute("""
-                SELECT COALESCE(SUM(sift_weight_out_g),0) AS sift
+                SELECT COUNT(*) AS n, COALESCE(SUM(sift_weight_out_g),0) AS sift,
+                       COUNT(*) FILTER (WHERE storage_location IS NOT NULL
+                                        AND storage_location <> '') AS with_loc
                 FROM hash_lot_sift_sessions WHERE hash_lot_id = %s
             """, (uid,))
             sift = cur.fetchone()
+
+            cur.execute("SELECT storage_location FROM bpr_component_lots WHERE lot_code = %s", (uid,))
+            lot_row = cur.fetchone() or {}
     finally:
         conn.close()
 
@@ -2073,6 +2182,7 @@ async def push_wash_release_summary(uid: str, supervisor_name: str):
     now_str = fmt_ts(datetime.now(timezone.utc))
     today   = datetime.now(timezone.utc).strftime("%m/%d/%Y")
 
+    # ── Sections 2 + 3 (unchanged from previous version) ──────────────────
     fields = {
         "WASH_S2_TOTAL_SESSIONS": wash["n"],
         "WASH_S2_TOTAL_FF_UIDS":  ff["n"],
@@ -2084,6 +2194,32 @@ async def push_wash_release_summary(uid: str, supervisor_name: str):
         "WASH_S3_SIFT_ACTUAL":     out,       "WASH_S3_SIFT_INITIALS":     supervisor_name, "WASH_S3_SIFT_TIME":     now_str,
         "WASH_S3_YIELDPCT_ACTUAL": yield_pct, "WASH_S3_YIELDPCT_INITIALS": supervisor_name, "WASH_S3_YIELDPCT_TIME": now_str,
     }
+
+    # ── Section 8 auto-verification (rows 2-6) ────────────────────────────
+    # Each check: (row, pass_condition, result_text)
+    storage_ok = bool((lot_row.get("storage_location") or "").strip()) or sift["with_loc"] > 0
+    yield_ok = isinstance(yield_pct, float) and 0.5 <= yield_pct <= 25
+
+    s8_checks = [
+        (2, wash["missing_uids"] == 0 and wash["n"] > 0,
+            f"{wash['n']} session(s), {ff['n']} distinct FF UID(s); "
+            f"{wash['missing_uids']} session(s) missing UIDs"),
+        (3, wash["no_ro"] == 0 and wash["n"] > 0,
+            f"{wash['n'] - wash['no_ro']}/{wash['n']} sessions RO-confirmed"),
+        (4, fd["no_oil"] == 0 and fd["n"] > 0,
+            f"{fd['n'] - fd['no_oil']}/{fd['n']} loads pump-oil-checked"),
+        (5, yield_ok,
+            f"Overall yield {yield_pct}% (spec 0.5-25%)"),
+        (6, storage_ok,
+            f"Storage location: {(lot_row.get('storage_location') or '').strip() or 'recorded on sift session' if storage_ok else 'NOT RECORDED'}"),
+    ]
+    for row, ok, result in s8_checks:
+        p = f"WASH_S8_ROW{row}"
+        fields[p + "_RESULT"]   = result
+        fields[p + "_REVIEWER"] = "BatchD auto-verify"
+        fields[p + "_DATETIME"] = now_str
+        fields[p + "_PASSFAIL"] = "Pass" if ok else "FAIL"
+
     await _post_wash_gas({
         "action":   "writeWashBPRFields",
         "uid":      uid,

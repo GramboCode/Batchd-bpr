@@ -42,6 +42,7 @@ export default function SessionLogPhase({
   const [sessions, setSessions] = useState([]);
   const [upstream, setUpstream] = useState([]);
   const [recon, setRecon] = useState(null);
+  const [lotInfo, setLotInfo] = useState(null);   // full lot detail — feeds prefill
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -54,17 +55,24 @@ export default function SessionLogPhase({
   async function loadData() {
     setLoading(true);
     try {
-      const calls = [
+      // Fixed positions via padded Promise.all — no index arithmetic on
+      // conditional pushes. Nulls fill the slots that don't apply.
+      const [sessRes, reconRes, upstreamRes, lotRes] = await Promise.all([
         fetch(`${API_BASE}/hash/${hashLotId}/${config.endpoint}s`).then(r => r.json()),
         fetch(`${API_BASE}/hash/${hashLotId}/reconciliation`).then(r => r.json()),
-      ];
-      if (config.upstreamEndpoint) {
-        calls.push(fetch(`${API_BASE}/hash/${hashLotId}/${config.upstreamEndpoint}`).then(r => r.json()));
-      }
-      const results = await Promise.all(calls);
-      setSessions(results[0].sessions || []);
-      setRecon(results[1]);
-      if (config.upstreamEndpoint) setUpstream(results[2].sessions || []);
+        config.upstreamEndpoint
+          ? fetch(`${API_BASE}/hash/${hashLotId}/${config.upstreamEndpoint}`).then(r => r.json())
+          : Promise.resolve(null),
+        // Lot detail (inputs + creation weights) only matters for the wash
+        // form's prefill — skip the call for freeze-dry/sift phases.
+        config.kind === "wash"
+          ? fetch(`${API_BASE}/hash/${hashLotId}`).then(r => (r.ok ? r.json() : null)).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      setSessions(sessRes.sessions || []);
+      setRecon(reconRes);
+      if (upstreamRes) setUpstream(upstreamRes.sessions || []);
+      if (lotRes) setLotInfo(lotRes);
     } catch (e) {
       console.error("SessionLogPhase load failed", e);
     } finally {
@@ -173,6 +181,44 @@ export default function SessionLogPhase({
       return `${recon.sift.count} sift session(s) logged. Input ${recon.sift.total_dry_weight_in_g}g → output ${recon.sift.total_sift_weight_out_g}g (${recon.overall_yield_pct ?? "—"}% overall yield). See Sift Sessions log for per-session detail.`;
     }
     return "";
+  }
+
+  // ── Prefill for the Add Session form ──────────────────────────────────
+  // Principle: never make an operator re-type what the system already
+  // knows — but keep everything editable, because session reality can
+  // differ from creation intent (split washes, swapped washers).
+  const lastSession = sessions.length ? sessions[sessions.length - 1] : null;
+
+  function buildPrefill() {
+    const prefill = {
+      // Equipment carries forward from the previous session on this lot —
+      // washer 1 in session 1 almost always means washer 1 in session 2.
+      equipmentId: lastSession?.equipment_id || "",
+      freshFrozenUids: "",
+      wetWeight: "",
+      wetWeightHint: "",
+    };
+    if (config.kind === "wash" && lotInfo) {
+      prefill.freshFrozenUids = (lotInfo.inputs || [])
+        .map(i => i.fresh_frozen_uid)
+        .filter(Boolean)
+        .join(", ");
+
+      // Wet weight: prefill the REMAINING unlogged weight — full total for
+      // the first session, the leftover for later sessions of a split wash.
+      const totalWet = parseFloat(lotInfo.lot?.wet_weight_g) || 0;
+      const loggedWet = sessions.reduce(
+        (sum, s) => sum + (parseFloat(s.wet_weight_g) || 0), 0
+      );
+      const remaining = Math.round((totalWet - loggedWet) * 100) / 100;
+      if (remaining > 0) {
+        prefill.wetWeight = String(remaining);
+        prefill.wetWeightHint = sessions.length === 0
+          ? "Prefilled from batch creation — adjust if splitting across sessions"
+          : `Prefilled with remaining unlogged weight (${remaining}g of ${totalWet}g)`;
+      }
+    }
+    return prefill;
   }
 
   const readyToClose = sessions.length > 0 && sessions.every(s => s.completed_at);
@@ -291,6 +337,7 @@ export default function SessionLogPhase({
                   kind={config.kind}
                   upstream={upstream}
                   upstreamLabel={config.upstreamLabel}
+                  prefill={buildPrefill()}
                   onSubmit={handleAddSession}
                   onCancel={() => setShowAddForm(false)}
                   submitting={submitting}
@@ -392,11 +439,14 @@ function SessionCard({ session, kind, onClose, isSigned }) {
 }
 
 // ── Add session form — shape differs by kind ──────────────────────────
-function AddSessionForm({ kind, upstream, upstreamLabel, onSubmit, onCancel, submitting }) {
-  const [equipmentId, setEquipmentId] = useState("");
+function AddSessionForm({ kind, upstream, upstreamLabel, prefill = {}, onSubmit, onCancel, submitting }) {
+  // Prefill lands via initial state: the form mounts fresh on every
+  // "Log New Session" click, so initializers pick up current lot data.
+  // Everything stays editable — prefill is a head start, not a lock.
+  const [equipmentId, setEquipmentId] = useState(prefill.equipmentId || "");
   const [teaBagCount, setTeaBagCount] = useState("");
-  const [freshFrozenUids, setFreshFrozenUids] = useState("");
-  const [wetWeight, setWetWeight] = useState("");
+  const [freshFrozenUids, setFreshFrozenUids] = useState(prefill.freshFrozenUids || "");
+  const [wetWeight, setWetWeight] = useState(prefill.wetWeight || "");
   const [roConfirmed, setRoConfirmed] = useState(false);
   const [pumpOilChecked, setPumpOilChecked] = useState(false);
   const [storageLocation, setStorageLocation] = useState("");
@@ -471,6 +521,11 @@ function AddSessionForm({ kind, upstream, upstreamLabel, onSubmit, onCancel, sub
           <div className="notes-section">
             <label className="notes-label">Wet Weight (g) <span className="required-star">*</span></label>
             <input className="notes-input" style={{ minHeight: "auto" }} type="number" placeholder="e.g. 4000" value={wetWeight} onChange={e => setWetWeight(e.target.value)} />
+            {prefill.wetWeightHint && wetWeight === prefill.wetWeight && (
+              <div style={{ fontSize: "0.75rem", color: "var(--text3)", marginTop: 4 }}>
+                {prefill.wetWeightHint}
+              </div>
+            )}
           </div>
           <label className="release-confirm-row">
             <input type="checkbox" className="release-confirm-cb" checked={roConfirmed} onChange={e => setRoConfirmed(e.target.checked)} />

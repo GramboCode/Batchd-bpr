@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import "./PhaseCard.css";
+import SanitationLogWash from './SanitationLogWash';
 
 export default function PhaseCard({
   phase, phaseIndex, isActive, isSigned, signoff,
-  stepChecks, onToggle, onSignOff, onExpand, saving
+  stepChecks, onToggle, onSignOff, onExpand, saving,
+  family, uid, apiBase
 }) {
   const [employeeName, setEmployeeName]   = useState(
     () => localStorage.getItem("bpr_employee_name") || ""
@@ -249,6 +251,14 @@ export default function PhaseCard({
                 rows={3}
               />
             </div>
+          )}
+
+          {!isSigned && phase.id === 'sanitation' && family === 'rosin_wash' && (
+            <SanitationLogWash
+              uid={uid}
+              apiBase={apiBase}
+              operatorName={employeeName}
+            />
           )}
 
           {/* Signed notes display */}
