@@ -2051,8 +2051,10 @@ async def push_wash_phase_to_gas(uid: str, phase_id: str, phase_def: dict,
     for step_idx, sheet_row in WASH_S6_PER_STEP_ROWS.get(phase_id, {}).items():
         sd = step_map.get(step_idx, {})
         checked_at = fmt_ts(sd.get("checked_at")) or signed_at
+        date_part, _, time_part = (checked_at or "").partition(" ")
         prefix = f"WASH_S6_STEP{sheet_row}"
-        fields[prefix + "_DATE"]     = (checked_at or "")[:10]
+        fields[prefix + "_DATE"]     = date_part
+        fields[prefix + "_START"]    = time_part
         fields[prefix + "_OP1"]      = sd.get("checked_by") or employee
         fields[prefix + "_VERIFIED"] = "✓" if sd.get("checked") else ""
 
