@@ -58,8 +58,10 @@ export default function LotDetail() {
   }
 
   return (
-    <div className="dash-shell">
-      <button className="chip" onClick={() => navigate("/")}>← Back to inventory</button>
+    <>
+      <AppHeader />
+      <div className="dash-shell">
+        <button className="chip" onClick={() => navigate("/")}>← Back to inventory</button>
 
       <header className="dash-header" style={{ marginTop: 14 }}>
         <div>
@@ -151,5 +153,6 @@ export default function LotDetail() {
         )}
       </section>
     </div>
+    </>
   );
 }

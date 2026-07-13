@@ -1,0 +1,65 @@
+/* AppHeader.css — BatchD app shell header */
+
+.app-header {
+  background: #1A1D2E;
+  border-bottom: 3px solid #E8192C;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.app-header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-decoration: none;
+}
+.app-brand-punch {
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: #E8192C;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.app-brand-sub {
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8890A8;
+}
+
+.app-nav { display: flex; gap: 4px; }
+.app-nav-link {
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #C3C9D9;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+.app-nav-link:hover { color: #fff; background: rgba(255,255,255,0.07); }
+.nav-on { color: #fff; background: #E8192C; }
+.nav-on:hover { background: #E8192C; }
+
+@media (max-width: 560px) {
+  .app-brand-sub { display: none; }
+  .app-nav-link { padding: 6px 8px; font-size: 0.72rem; }
+}

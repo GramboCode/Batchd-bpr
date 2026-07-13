@@ -1432,16 +1432,26 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
         # rosin_wash: write the Section 2 source summary + Section 3 yield
         # rollups into the wash BPR sheet now that all numbers are final
         if family == "rosin_wash":
+            # Release = the lot becomes press-eligible: flip to 'available'
+            # and adopt the sift storage location if the lot has none.
+            conn3 = get_db()
+            try:
+                with conn3.cursor() as cur3:
+                    cur3.execute("""
+                        UPDATE bpr_component_lots SET
+                            status = 'available',
+                            storage_location = COALESCE(NULLIF(storage_location, ''), (
+                                SELECT storage_location FROM hash_lot_sift_sessions
+                                WHERE hash_lot_id = %s AND storage_location IS NOT NULL
+                                ORDER BY completed_at DESC NULLS LAST LIMIT 1
+                            )),
+                            updated_at = NOW()
+                        WHERE lot_code = %s
+                    """, (uid, uid))
+                conn3.commit()
+            finally:
+                conn3.close()
             await push_wash_release_summary(uid, req.supervisor_name)
-
-        return {
-            "success": True,
-            "bpr": completed,
-            "pdf_url": pdf_url,
-            "message": f"BPR released and completed by {req.supervisor_name}"
-        }
-    finally:
-        conn.close()
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/{uid}/status
@@ -2700,6 +2710,33 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
                 f"S{r['session_num']}: {float(r['weight_allocated_g']):,.0f}g"
                 for r in cur.fetchall()
             )
+
+            # ── LEDGER: inventory is born as sift sessions close ──────────
+            # Target = total sift output across ALL closed sessions for this
+            # lot; we insert the DELTA vs. what the ledger already shows as
+            # produced. Closing session 2 adds only session 2's grams, and
+            # RE-closing a session to correct a weight adjusts rather than
+            # double-counts — same convergence rule as everywhere else.
+            lot = get_lot(cur, updated["hash_lot_id"])
+            cur.execute("""
+                SELECT COALESCE(SUM(sift_weight_out_g), 0) AS total_out
+                FROM hash_lot_sift_sessions
+                WHERE hash_lot_id = %s AND sift_weight_out_g IS NOT NULL
+            """, (updated["hash_lot_id"],))
+            total_out = float(cur.fetchone()["total_out"])
+            cur.execute("""
+                SELECT COALESCE(SUM(qty_delta), 0) AS produced
+                FROM bpr_lot_transactions
+                WHERE lot_id = %s AND txn_type = 'production'
+            """, (lot["id"],))
+            already = float(cur.fetchone()["produced"])
+            delta = total_out - already
+            if delta != 0:
+                add_transaction(cur, lot, "production", delta,
+                                reference_type="sift_session",
+                                reference_id=str(session_id),
+                                note=f"Sift session {updated['session_num']} closed",
+                                performed_by=updated["operator_name"])
         conn.commit()
 
         import asyncio

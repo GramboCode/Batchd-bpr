@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
 import "./Dashboard.css";
+import AppHeader from "./AppHeader";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -105,11 +106,13 @@ export default function Dashboard() {
   if (error)   return <div className="dash-shell"><div className="dash-error">{error}</div></div>;
 
   return (
-    <div className="dash-shell">
-      <header className="dash-header">
-        <div>
-          <div className="dash-kicker">BatchD · Punch Tools</div>
-          <h1 className="dash-title">Components Inventory</h1>
+    <>
+      <AppHeader />
+      <div className="dash-shell">
+        <header className="dash-header">
+          <div>
+            <div className="dash-kicker">BatchD · Punch Tools</div>
+            <h1 className="dash-title">Components Inventory</h1>
         </div>
         <div className="dash-totals">
           {Object.entries(totals).map(([unit, qty]) => (
@@ -198,5 +201,6 @@ export default function Dashboard() {
         </table>
       </div>
     </div>
+    </>
   );
 }
