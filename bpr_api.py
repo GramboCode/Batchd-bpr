@@ -1411,6 +1411,13 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
             completed = dict(cur.fetchone())
 
         conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, f"Failed to release BPR: {str(e)}")
+    finally:
+        conn.close()
 
         # Generate PDF + upload to Drive (async, non-blocking for response)
         pdf_url = await generate_and_upload_pdf(completed, definition, signoffs, steps)
