@@ -10,9 +10,9 @@ import "./AppHeader.css";
 
 const EXTERNAL_LINKS = {
   // GAS wash page (New Wash Batch) — paste the /exec URL:
-  newWashBatch: "PASTE-GAS-WASH-PAGE-URL",
+  newWashBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=wash",
   // GAS Punch Tools batch dashboard — paste the /exec URL:
-  punchTools: "PASTE-GAS-PUNCH-TOOLS-URL",
+  punchTools: "https://script.google.com/macros/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec",
 };
 
 export default function AppHeader() {
