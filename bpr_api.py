@@ -1372,9 +1372,7 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
             family = rec["product_family"]
             definition = BPR_PHASES[family]
 
-            cur.execute("""
-                SELECT phase_id FROM bpr_phase_signoffs WHERE bpr_id = %s
-            """, (rec["id"],))
+            cur.execute("SELECT phase_id FROM bpr_phase_signoffs WHERE bpr_id = %s", (rec["id"],))
             signed_phases = {r["phase_id"] for r in cur.fetchall()}
             all_phases = {p["id"] for p in definition["phases"]}
             unsigned = all_phases - signed_phases
@@ -1385,25 +1383,16 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
                     "unsigned_phases": phase_names
                 })
 
-            cur.execute("""
-                SELECT * FROM bpr_phase_signoffs WHERE bpr_id = %s ORDER BY signed_at
-            """, (rec["id"],))
+            cur.execute("SELECT * FROM bpr_phase_signoffs WHERE bpr_id = %s ORDER BY signed_at", (rec["id"],))
             signoffs = [dict(r) for r in cur.fetchall()]
 
-            cur.execute("""
-                SELECT * FROM bpr_step_checks WHERE bpr_id = %s ORDER BY phase_id, step_index
-            """, (rec["id"],))
+            cur.execute("SELECT * FROM bpr_step_checks WHERE bpr_id = %s ORDER BY phase_id, step_index", (rec["id"],))
             steps = [dict(r) for r in cur.fetchall()]
 
             cur.execute("""
                 UPDATE bpr_records SET
-                    status = 'completed',
-                    completed_at = %s,
-                    supervisor_name = %s,
-                    supervisor_at = %s,
-                    deviation_notes = %s,
-                    total_yield = %s,
-                    updated_at = %s
+                    status = 'completed', completed_at = %s, supervisor_name = %s,
+                    supervisor_at = %s, deviation_notes = %s, total_yield = %s, updated_at = %s
                 WHERE uid = %s
                 RETURNING *
             """, (now_utc(), req.supervisor_name, now_utc(),
@@ -1411,54 +1400,56 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
             completed = dict(cur.fetchone())
 
         conn.commit()
+
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(500, f"Failed to release BPR: {str(e)}")
     finally:
-        conn.close()
+        conn.close()   # ← finally now ONLY closes the connection. Nothing else.
 
-        # Generate PDF + upload to Drive (async, non-blocking for response)
-        pdf_url = await generate_and_upload_pdf(completed, definition, signoffs, steps)
+    # ── Everything below only runs after a successful commit ──────────
+    pdf_url = await generate_and_upload_pdf(completed, definition, signoffs, steps)
 
-        if pdf_url:
-            conn2 = get_db()
-            try:
-                with conn2.cursor() as cur2:
-                    cur2.execute("UPDATE bpr_records SET pdf_drive_url = %s WHERE uid = %s",
-                                 (pdf_url, uid))
-                conn2.commit()
-                completed["pdf_drive_url"] = pdf_url
-            finally:
-                conn2.close()
+    if pdf_url:
+        conn2 = get_db()
+        try:
+            with conn2.cursor() as cur2:
+                cur2.execute("UPDATE bpr_records SET pdf_drive_url = %s WHERE uid = %s",
+                             (pdf_url, uid))
+            conn2.commit()
+            completed["pdf_drive_url"] = pdf_url
+        finally:
+            conn2.close()
 
-        # Ping GAS webhook to update BPR_STATUS in UID_TRACKER
-        await ping_gas_webhook(uid, "completed", pdf_url)
+    await ping_gas_webhook(uid, "completed", pdf_url)
 
-        # rosin_wash: write the Section 2 source summary + Section 3 yield
-        # rollups into the wash BPR sheet now that all numbers are final
-        if family == "rosin_wash":
-            # Release = the lot becomes press-eligible: flip to 'available'
-            # and adopt the sift storage location if the lot has none.
-            conn3 = get_db()
-            try:
-                with conn3.cursor() as cur3:
-                    cur3.execute("""
-                        UPDATE bpr_component_lots SET
-                            status = 'available',
-                            storage_location = COALESCE(NULLIF(storage_location, ''), (
-                                SELECT storage_location FROM hash_lot_sift_sessions
-                                WHERE hash_lot_id = %s AND storage_location IS NOT NULL
-                                ORDER BY completed_at DESC NULLS LAST LIMIT 1
-                            )),
-                            updated_at = NOW()
-                        WHERE lot_code = %s
-                    """, (uid, uid))
-                conn3.commit()
-            finally:
-                conn3.close()
-            await push_wash_release_summary(uid, req.supervisor_name)
+    if family == "rosin_wash":
+        conn3 = get_db()
+        try:
+            with conn3.cursor() as cur3:
+                cur3.execute("""
+                    UPDATE bpr_component_lots SET
+                        status = 'available',
+                        storage_location = COALESCE(NULLIF(storage_location, ''), (
+                            SELECT storage_location FROM hash_lot_sift_sessions
+                            WHERE hash_lot_id = %s AND storage_location IS NOT NULL
+                            ORDER BY completed_at DESC NULLS LAST LIMIT 1
+                        )),
+                        updated_at = NOW()
+                    WHERE lot_code = %s
+                """, (uid, uid))
+            conn3.commit()
+        finally:
+            conn3.close()
+        await push_wash_release_summary(uid, req.supervisor_name)
+
+    return {
+        "success": True,
+        "bpr": completed,
+        "message": f"BPR released by {req.supervisor_name}"
+    }
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/{uid}/status
