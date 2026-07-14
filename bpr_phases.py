@@ -2258,22 +2258,31 @@ BPR_PHASES = {
           "Pull hash from freezer — record weight of each hash lot being used",
           "Verify all equipment clean: rosin presses, plates, tools, parchment",
           "Preheat rosin press #1 to 162°F — verify with thermometer before pressing",
-          "Preheat rosin press #2 to 162°F if using dual press — verify temp",
+          "Preheat rosin press #2 to 162°F if using — verify temp",
+          "Preheat rosin press #3 to 162°F if using — verify temp",
+          "Preheat rosin press #4 to 162°F if using — verify temp",
           "Confirm parchment supply is sufficient for batch",
           "Gloves on — maintain throughout",
         ],
-        "ccps": [4, 5],
+        "ccps": [4, 5, 6, 7],
+        "ccp_group_min": 1,
         "ccp_labels": {
-          4: "Rosin press #1 temp (°F) — must be 162°F before first press",
-          5: "Rosin press #2 temp (°F) — if using, must be 162°F",
+          4: "Rosin press #1 temp (°F)",
+          5: "Rosin press #2 temp (°F) — if using",
+          6: "Rosin press #3 temp (°F) — if using",
+          7: "Rosin press #4 temp (°F) — if using",
         },
         "ccp_specs": {
           4: {"unit": "F", "min": 158, "max": 166},
           5: {"unit": "F", "min": 158, "max": 166},
+          6: {"unit": "F", "min": 158, "max": 166},
+          7: {"unit": "F", "min": 158, "max": 166},
         },
         "corrective_actions": {
           4: "Below 158°F: wait and re-verify. Do not press until at temp.",
-          5: "Same as press #1. If not reaching temp: use single press, document.",
+          5: "Below 158°F: wait and re-verify. Do not press until at temp.",
+          6: "Below 158°F: wait and re-verify. Do not press until at temp.",
+          7: "Below 158°F: wait and re-verify. Do not press until at temp.",
         },
         "notes_required": False,
         "sign_off_roles": ["Operator"],
@@ -2292,19 +2301,16 @@ BPR_PHASES = {
           "Place press waste in locking waste receptacle — record in Waste Management Log",
           "Clean press plates with ISO-alcohol between strain changes",
         ],
-        "ccps": [5, 6, 7],
+        "ccps": [6, 7],
         "ccp_labels": {
-          5: "Press temp confirmed at start of run (°F)",
           6: "Total rosin yield weight (g)",
           7: "Press waste weight (g) — for Waste Management Log",
         },
         "ccp_specs": {
-          5: {"unit": "F", "min": 158, "max": 166},
-          6: {"unit": "g", "min": 1,   "max": 99999},
-          7: {"unit": "g", "min": 0,   "max": 99999},
+          6: {"unit": "g", "min": 1, "max": 99999},
+          7: {"unit": "g", "min": 0, "max": 99999},
         },
         "corrective_actions": {
-          5: "Temp dropped during run: stop, re-verify, document.",
           6: "Record actual. Calculate press yield %: rosin ÷ hash × 100.",
           7: "All press waste must be logged. Zero waste is unusual — verify.",
         },
@@ -2323,18 +2329,18 @@ BPR_PHASES = {
           "Record cure method used: Fresh Press or Badder",
           "Record cure start time and completion time",
         ],
-        "ccps": [4, 5],
+        "ccps": [5, 6],
         "ccp_labels": {
-          4: "Cure method confirmed — Fresh Press or Badder",
-          5: "Cure duration (hours) — Badder only",
+          5: "Cure method confirmed — Fresh Press or Badder",
+          6: "Cure duration (hours) — Badder only",
         },
         "ccp_specs": {
-          4: {"unit": "boolean", "min": 1,  "max": 1},
-          5: {"unit": "hours",   "min": 0,  "max": 72},
+          5: {"unit": "boolean", "min": 1, "max": 1},
+          6: {"unit": "hours",   "min": 0, "max": 72},
         },
         "corrective_actions": {
-          4: "Must be documented. Fresh Press and Badder are different products.",
-          5: "Badder not nucleating after 48 hrs: consult supervisor. Document.",
+          5: "Must be documented. Fresh Press and Badder are different products.",
+          6: "Badder not nucleating after 48 hrs: consult supervisor. Document.",
         },
         "notes_required": False,
         "sign_off_roles": ["Operator"],
@@ -2350,18 +2356,18 @@ BPR_PHASES = {
           "Record total jars filled",
           "Apply CR cap immediately after filling each jar",
         ],
-        "ccps": [1, 2],
+        "ccps": [2, 4],
         "ccp_labels": {
-          1: "Fill weight per jar (g) — must be 1.0-1.05g",
-          2: "Total jars filled (yield count)",
+          2: "Fill weight per jar (g) — must be 1.0-1.05g",
+          4: "Total jars filled (yield count)",
         },
         "ccp_specs": {
-          1: {"unit": "g",     "min": 1.0, "max": 1.05},
-          2: {"unit": "units", "min": 1,   "max": 99999},
+          2: {"unit": "g",     "min": 1.0, "max": 1.05},
+          4: {"unit": "units", "min": 1,   "max": 99999},
         },
         "corrective_actions": {
-          1: "OOS: remove excess or top up. Do not seal OOS jars without correction.",
-          2: "Outside 95-105%: Deviation Log.",
+          2: "OOS: remove excess or top up. Do not seal OOS jars without correction.",
+          4: "Outside 95-105%: Deviation Log.",
         },
         "notes_required": False,
         "sign_off_roles": ["Operator"],
@@ -2412,13 +2418,9 @@ BPR_PHASES = {
         "sign_off_roles": ["Operator"],
       },
     ],
-  },  # ← closes "rosin_press"
+  },
 
-}  
-
-
-
-
+}
 
 DR_NORMS_PREFIXES = ("dr. norm", "dr norm", "dr.norm", "norms", "doctor norm")
 

@@ -1293,14 +1293,31 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
 
             ccps = phase_def.get("ccps", [])
             ccp_values = req.ccp_values or {}
-            missing_ccps = [i for i in ccps if str(i) not in ccp_values and i not in ccp_values]
-            if missing_ccps:
-                ccp_labels = phase_def.get("ccp_labels", {})
-                missing_labels = [ccp_labels.get(i, f"Step {i+1}") for i in missing_ccps]
-                raise HTTPException(400, {
-                    "message": "CCP measurements required before sign-off",
-                    "missing_ccps": missing_labels
-                })
+            group_min = phase_def.get("ccp_group_min")
+
+            def has_value(i):
+                v = ccp_values.get(str(i), ccp_values.get(i))
+                return v not in (None, "")
+
+            if group_min is not None:
+                # "At least N of these" instead of "all required" — e.g. variable press count
+                provided_count = sum(1 for i in ccps if has_value(i))
+                if provided_count < group_min:
+                    ccp_labels = phase_def.get("ccp_labels", {})
+                    raise HTTPException(400, {
+                        "message": f"At least {group_min} CCP measurement(s) required from: "
+                                   + ", ".join(ccp_labels.get(i, f"Step {i+1}") for i in ccps),
+                        "provided_count": provided_count
+                    })
+            else:
+                missing_ccps = [i for i in ccps if not has_value(i)]
+                if missing_ccps:
+                    ccp_labels = phase_def.get("ccp_labels", {})
+                    missing_labels = [ccp_labels.get(i, f"Step {i+1}") for i in missing_ccps]
+                    raise HTTPException(400, {
+                        "message": "CCP measurements required before sign-off",
+                        "missing_ccps": missing_labels
+                    })
 
             if phase_def.get("notes_required") and not (req.notes or "").strip():
                 raise HTTPException(400, {"message": "Notes are required before signing off this phase"})
@@ -1864,9 +1881,10 @@ LIVE_ROSIN_PHASE_TO_STEPS = {
 }
 
 LIVE_ROSIN_CCP_VALUES = {
-    ("pre_production", 4):  3,
-    ("pre_production", 5):  3,
-    ("pressing", 5):        5,
+    ("pre_production", 4):  3,   # Press #1
+    ("pre_production", 5):  3,   # Press #2
+    ("pre_production", 6):  3,   # Press #3
+    ("pre_production", 7):  3,   # Press #4
     ("pressing", 6):        5,
     ("pressing", 7):        5,
     ("curing", 5):          6,
