@@ -1829,141 +1829,183 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
     except Exception as e:
         print(f"GAS webhook ping failed (non-fatal): {e}")
 
+# ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
+# ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
+PRODUCT_FAMILY_TO_TEMPLATE_KEY = {
+    "gummies":     "punch_gummies",
+    "rosin_press": "punch_live_rosin",
+    # "rosin_wash" stays on its own dedicated pathway (push_wash_phase_to_gas)
+}
+
+# ── GUMMIES: phase → BPR write-back mapping (BPR-GUM-001 v2.0, 18-step) ──
+GUMMIES_PHASE_TO_STEPS = {
+    "pre_production":  [1],
+    "ingredient_prep": [2],
+    "cook":            [3, 4, 5, 6, 7, 8],
+    "depositing":      [9, 10],
+    "curing":          [11],
+    "qc_weight":       [12],
+    "packaging":       [13, 14, 15, 16],
+    "sanitation":      [17],
+}
+
+GUMMIES_CCP_VALUES = {
+    ("cook", 8):       6,
+    ("cook", 12):      8,
+    ("cook", 13):      8,
+    ("qc_weight", 1):  12,
+    ("packaging", 5):  15,
+    ("packaging", 7):  16,
+}
+
+GUMMIES_CANN_VALUES = {
+    ("ingredient_prep", 5): "CANN1",
+}
+
+# ── LIVE ROSIN PRESS: phase → BPR write-back mapping (BPR-LRS-001 v2.0, 12-step) ──
+LIVE_ROSIN_PHASE_TO_STEPS = {
+    "pre_production": [1, 3],
+    "pressing":        [2, 4, 5],
+    "curing":          [6],
+    "filling":         [7, 8],
+    "packaging":       [9, 10],
+    "sanitation":      [11],
+}
+
+LIVE_ROSIN_CCP_VALUES = {
+    ("pre_production", 4):  3,
+    ("pre_production", 5):  3,
+    ("pressing", 5):        5,
+    ("pressing", 6):        5,
+    ("pressing", 7):        5,
+    ("curing", 5):          6,
+    ("curing", 6):          6,
+    ("filling", 2):         8,
+    ("filling", 4):         8,
+    ("packaging", 3):       10,
+    ("packaging", 5):       10,
+}
+
+LIVE_ROSIN_CANN_VALUES = {
+    ("pre_production", 2): "CANN1",   # hash weight pulled from freezer → Section 2 row 1
+}
+
+# ── Per-family lookup registries ──
+PHASE_TO_STEPS_MAPS = {
+    "gummies":     GUMMIES_PHASE_TO_STEPS,
+    "rosin_press": LIVE_ROSIN_PHASE_TO_STEPS,
+}
+CCP_VALUES_MAPS = {
+    "gummies":     GUMMIES_CCP_VALUES,
+    "rosin_press": LIVE_ROSIN_CCP_VALUES,
+}
+CANN_VALUES_MAPS = {
+    "gummies":     GUMMIES_CANN_VALUES,
+    "rosin_press": LIVE_ROSIN_CANN_VALUES,
+}
+
 async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
                                   signoff: dict, steps: list, product_family: str):
     """
-    Builds the named-range field map from a completed phase signoff
-    and POSTs it to GAS serverWriteBPRFields.
-    Only handles live_rosin for now — extend per product family.
+    Writes a signed-off phase to its BPR sheet via direct cell-map addressing
+    (successor to the old named-range approach — see session notes on why
+    named ranges failed in production for both live_rosin and rosin_wash's
+    Section 6 attempt). Three write categories per phase:
+      1. Timestamp fan-out — every sheet step a phase covers gets DATE/OP1/VERIFIED
+      2. CCP values — specific checklist numbers landing on one STEPn's VALUE
+      3. Cannabis-row values — writes into Section 2 (CANNn_*), not Section 6
     """
     webhook_url = os.environ.get("GAS_WEBHOOK_URL")
     if not webhook_url:
         print("No GAS_WEBHOOK_URL — skipping BPR write-back")
         return
 
-    # rosin_wash has its own writer: named ranges for Section 6 plus the
-    # multi-session summary rows. Defined in the wash write-back section below.
     if product_family == "rosin_wash":
         await push_wash_phase_to_gas(uid, phase_id, phase_def, signoff, steps)
         return
 
-    if product_family != "live_rosin":
+    template_key = PRODUCT_FAMILY_TO_TEMPLATE_KEY.get(product_family)
+    if not template_key:
         print(f"BPR write-back not yet implemented for {product_family} — skipping")
         return
 
-    # Build step map for this phase: step_index -> {checked_by, checked_at}
-    step_map = {}
-    for s in steps:
-        if s["phase_id"] == phase_id:
-            step_map[s["step_index"]] = s
+    phase_to_steps = PHASE_TO_STEPS_MAPS.get(product_family, {})
+    ccp_value_map  = CCP_VALUES_MAPS.get(product_family, {})
+    cann_value_map = CANN_VALUES_MAPS.get(product_family, {})
 
-    # CCP-only mapping: (phase_id, step_index) -> Section 4 sheet row number (1-21)
-    # Verified against actual BPR sheet Step Description column
-    LIVE_ROSIN_CCP_ROW_MAP = {
-        ("pre_production", 2):  1,
-        ("pre_production", 1):  2,
-        ("ice_water_wash", 0):  3,
-        ("ice_water_wash", 1):  4,
-        ("ice_water_wash", 2):  5,
-        ("ice_water_wash", 3):  6,
-        ("ice_water_wash", 6):  7,
-        ("ice_water_wash", 9):  8,
-        ("freeze_drying",  3):  9,
-        ("freeze_drying",  4): 10,
-        ("freeze_drying",  6): 11,
-        ("freeze_drying",  7): 12,
-        ("pressing",       2): 14,
-        ("pressing",       3): 15,
-        ("pressing",       6): 16,
-        ("packaging",      1): 17,
-        ("packaging",      4): 19,
-        ("sanitation",     6): 21,
-    }
+    if not phase_to_steps:
+        print(f"No PHASE_TO_STEPS map defined for {product_family} yet — skipping write-back")
+        return
 
-    fields = {}
+    step_lookup = {s["step_index"]: s for s in steps if s["phase_id"] == phase_id}
     signed_at = fmt_ts(signoff.get("signed_at")) or ""
     employee  = signoff.get("employee_name") or ""
 
     ccp_values = signoff.get("ccp_values") or {}
     if isinstance(ccp_values, str):
         try: ccp_values = json.loads(ccp_values)
-        except: ccp_values = {}
+        except Exception: ccp_values = {}
 
-    for (p_id, step_idx), sheet_row in LIVE_ROSIN_CCP_ROW_MAP.items():
+    fields = {}
+
+    # ── 1. Timestamp fan-out — every sheet step this phase covers ──
+    sheet_steps = phase_to_steps.get(phase_id, [])
+    date_part, time_part = "", ""
+    if signed_at:
+        date_part, _, time_part = signed_at.partition(" ")
+    for sheet_step_num in sheet_steps:
+        prefix = f"STEP{sheet_step_num}"
+        fields[prefix + "_DATE"]     = date_part
+        fields[prefix + "_END"]      = time_part  # phase signoff = step completion time
+        fields[prefix + "_OP1"]      = employee
+        fields[prefix + "_VERIFIED"] = "✓"
+
+    # ── 2. CCP-specific values — group by target sheet step, concatenate ──
+    step_value_parts = {}  # sheet_step_num -> list of "label: value" strings
+    ccp_labels = phase_def.get("ccp_labels", {})
+    for (p_id, step_idx), sheet_step_num in ccp_value_map.items():
         if p_id != phase_id:
             continue
+        val = ccp_values.get(str(step_idx))
+        if val is None:
+            val = ccp_values.get(step_idx, "")
+        if val in (None, ""):
+            continue
+        label = str(ccp_labels.get(step_idx, f"Item {step_idx}")).split("—")[0].split("(")[0].strip()
+        step_value_parts.setdefault(sheet_step_num, []).append(f"{label}: {val}")
 
-        val = ccp_values.get(str(step_idx)) or ccp_values.get(step_idx) or ""
-        prefix = f"ROSIN_S4_STEP{sheet_row}"
+    for sheet_step_num, parts in step_value_parts.items():
+        prefix = f"STEP{sheet_step_num}"
+        fields[prefix + "_VALUE"]    = " | ".join(parts)
+        fields[prefix + "_PASSFAIL"] = "Pass"
 
-        step_data = step_map.get(step_idx, {})
+    # ── 3. Cannabis-row values — Section 2, not Section 6 ──
+    for (p_id, step_idx), cann_prefix in cann_value_map.items():
+        if p_id != phase_id:
+            continue
+        step_data = step_lookup.get(step_idx, {})
         checked_at = fmt_ts(step_data.get("checked_at")) if step_data.get("checked_at") else signed_at
         checked_by = step_data.get("checked_by") or employee
+        val = ccp_values.get(str(step_idx))
+        if val is None:
+            val = ccp_values.get(step_idx, "")
 
-        fields[prefix + "_DATE"]     = checked_at[:10] if checked_at else ""
-        fields[prefix + "_OP1"]      = checked_by
-        fields[prefix + "_VERIFIED"] = "✓" if step_data.get("checked") else ""
-        fields[prefix + "_VALUE"]    = val
-        fields[prefix + "_PASSFAIL"] = "Pass" if val else ""
-
-        
-
-    # Section 5 — yield fields
-    if phase_id == "qc_yield":
-        fields["ROSIN_S5_YIELD_ACTUAL"]  = ccp_values.get("4") or ccp_values.get(4) or ""
-        fields["ROSIN_S5_INITIALS"]      = employee
-        fields["ROSIN_S5_TIME_RECORDED"] = signed_at
-
-    if phase_id == "packaging":
-        fields["ROSIN_S5_LABEL_COUNT"] = ccp_values.get("6") or ccp_values.get(6) or ""
-
-    # Section 6 CCP monitoring rows — verified against sheet CCP list
-    PHASE_CCP_MAP = {
-        "ice_water_wash": {
-            0: 1,
-            2: 3,
-            6: 4,
-            9: 5,
-        },
-        "freeze_drying": {
-            3: 6,
-            3: 7,
-            6: 8,
-        },
-        "pressing": {
-            2: 9,
-            6: 10,
-            6: 11,
-        },
-        "packaging": {
-            1: 12,
-            4: 13,
-        },
-        "pre_production": {
-            2: 2,
-        },
-    }
-
-    phase_ccp_map = PHASE_CCP_MAP.get(phase_id, {})
-    for step_idx, ccp_row in phase_ccp_map.items():
-        val = ccp_values.get(str(step_idx)) or ccp_values.get(step_idx) or ""
-        prefix = f"ROSIN_S6_CCP{ccp_row}"
-        fields[prefix + "_ACTUAL"]   = val
-        fields[prefix + "_TIME"]     = signed_at
-        fields[prefix + "_PASSFAIL"] = "Pass" if val else ""
-        fields[prefix + "_OP"]       = employee
+        fields[cann_prefix + "_ACTUALQTY"]  = val
+        fields[cann_prefix + "_WEIGHEDBY"]  = checked_by
+        fields[cann_prefix + "_TIME"]       = checked_at[-8:] if checked_at else ""
 
     if not fields:
-        print(f"push_phase_to_gas_bpr: no fields to write for phase {phase_id}")
+        print(f"push_phase_to_gas_bpr: no mapped fields for phase {phase_id} [{product_family}]")
         return
 
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json={
-                "action": "writeBPRFields",
-                "uid":    uid,
-                "fields": fields,
-                "secret": os.environ.get("GAS_SHARED_SECRET", ""),
+                "action":      "writeBPRFieldsByCellMap",
+                "uid":         uid,
+                "templateKey": template_key,
+                "fields":      fields,
+                "secret":      os.environ.get("GAS_SHARED_SECRET", ""),
             })
             print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
