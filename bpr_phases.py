@@ -1857,118 +1857,233 @@ BPR_PHASES = {
   },
 
   # ─────────────────────────────────────────────────────────────────
-  # TEMPO VAPES / DISTILLATE VAPES (510 + TEMPO AIO)
+  # DISTILLATE VAPE 510 / TEMPO AIO / TEMPO LIVE RESIN VAPE
+  # Matches BPR-DVP-001 v2.0 and BPR-TLR-001 v2.0 (water-bath blend →
+  # VapeJet fill → Squish-o-matic cap). Rosin AIO Vape does NOT use this
+  # family — it has a multi-day decarb stage first, see "rosin_vape_decarb".
   # ─────────────────────────────────────────────────────────────────
   "vapes": {
-    "label": "Vape Cartridges / AIO (Distillate & Live Rosin)",
-    "sop_ref": "P007 / MMP-DVP-001",
+    "label": "Distillate Vape 510 / TEMPO AIO / Tempo Live Resin Vape",
+    "sop_ref": "MMP-DVP-001 v1.0 / PQP-DVP-001 v1.0",
     "uom": "units",
     "phases": [
       {
         "id": "pre_production",
         "name": "Pre-Production Setup",
         "steps": [
-          "Verify UID tag is attached to oil source material",
-          "Confirm hardware (cartridges/pods) lot and supplier match spec for this SKU",
-          "VapeJet machine: flush needles, reservoirs, oil lines, and tanks with 70–99% ISO-alcohol — dry completely",
+          "ISO-flush VapeJet lines, syringe, and reservoir — air dry completely",
+          "Purge fresh oil through needle before production — confirm no air bubbles at tip",
+          "Verify cannabis distillate COA (and HTE COA if Tempo Live Resin — both required) — record METRC UID(s), potency %, required weight, actual weight, variance, THC/unit",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "Confirm hardware (510 cartridge / TEMPO AIO pod) lot matches spec for this SKU",
+          "Calibrate VapeJet platform (level). Set fill weight in software: 1.0g",
           "All tabletop counters and surfaces: 70–99% ISO-alcohol",
-          "Confirm oil is at appropriate viscosity for filling temperature",
-          "Work area is free of clutter — only items for this run present",
-          "Gloves on — maintain throughout production",
-          "Confirm work area, trays, and tools free of food/allergen residue from any prior production",
         ],
-        "ccps": [],
-        "ccp_labels": {},
+        "ccps": [2, 5],
+        "ccp_labels": {2: "Cannabis COA verified — UID / potency / weight / variance recorded", 5: "Fill weight set in VapeJet software (g) — target 1.0g"},
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}, 5: {"unit": "g", "min": 1.0, "max": 1.0}},
+        "corrective_actions": {2: "No COA or UID mismatch: halt production, contact QA.", 5: "Reset software fill weight to 1.0g before proceeding."},
         "notes_required": False,
       },
       {
-        "id": "hardware_inspection",
-        "name": "Hardware Inspection",
+        "id": "source_prep",
+        "name": "Source Prep — Water Bath & Blend",
         "steps": [
-          "Inspect each cartridge/pod: no cracks, no defective threading, no visible debris",
-          "Confirm hardware matches the correct SKU spec (510 vs AIO vs TEMPO)",
-          "Confirm cartridge resistance/coil spec matches this oil type",
-          "Pull visual sample (minimum 10 units) — reject any with cosmetic defects",
-          "Record hardware lot number for batch record",
-          "Confirm child-resistant packaging is available and correct for SKU",
+          "Place distillate in sterile glass container in water bath at 80–90°F until fluid",
+          "510/TEMPO AIO: place terpenes in vacuum oven at 175°F. Tempo Live Resin: place HTE in warm container.",
+          "Weigh distillate and terpenes/HTE per batch formula. Add liquidizer (TEMPO AIO only). Add menthol (ICE SKUs only). Record ALL weights.",
+          "Combine in clean beaker. Immersion blend minimum 15 minutes until fully uniform — no separation or cloudiness.",
         ],
-        "ccps": [],
-        "ccp_labels": {},
+        "ccps": [0, 2, 3],
+        "ccp_labels": {0: "Water bath temp (°F) — must be 80–90°F", 2: "Component weights recorded (g)", 3: "Blend uniformity — ≥15 min, no separation/cloudiness"},
+        "ccp_specs": {0: {"unit": "F", "min": 80, "max": 90}, 2: {"unit": "g", "min": 0.1, "max": 99999}, 3: {"unit": "minutes", "min": 15, "max": 999}},
+        "corrective_actions": {0: "Outside 80–90°F: adjust bath, re-verify before weighing.", 2: "Record actual — any variance from formula noted on BPR.", 3: "If separation/cloudiness persists after 15 min: extend blend time, do not proceed until uniform."},
+        "notes_required": False,
+      },
+      {
+        "id": "fill_calibration",
+        "name": "Fill Calibration (Mandatory Before Production)",
+        "steps": [
+          "Load blend into VapeJet reservoir. Purge lines — confirm fresh oil at needle tip, no air bubbles.",
+          "PRE-RUN FILL WEIGHT CALIBRATION: run 3–5 pump cycles. Weigh 3 filled units on certified scale.",
+          "Confirm average within target: 1.0g ±0.05g. Adjust VapeJet and re-verify if outside tolerance.",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Pre-run calibration weight, avg of 3 units (g) — must be 1.0g ±0.05g"},
+        "ccp_specs": {1: {"unit": "g", "min": 0.95, "max": 1.05}},
+        "corrective_actions": {1: "Outside tolerance: adjust VapeJet, re-run 3-unit check. Do NOT begin production run until in spec."},
         "notes_required": False,
       },
       {
         "id": "filling",
-        "name": "Filling (VapeJet)",
+        "name": "Filling & Capping",
         "steps": [
-          "Load oil into VapeJet reservoir — confirm no air bubbles in oil lines",
-          "Set filling temperature appropriate for oil viscosity",
-          "Run test fills on 3 units — weigh to confirm fill weight is on target",
-          "Confirm fill weight tolerance: verify against MMP spec for this SKU",
-          "Begin production run — monitor fill weight periodically (every 25 units minimum)",
-          "Cap each unit immediately after filling",
-          "Set aside any units with visible underfill, overfill, or oil contamination on exterior",
-          "Track total units filled and waste units",
+          "Load rack (100 units 510 / 50 units TEMPO AIO / 24 units Tempo Live Resin AIO). Run fill cycle — monitor for overflow.",
+          "Transfer to Squish-o-matic 1000. Press Squish — hydraulic cap applied.",
+          "Pull-test spot-check cap seal per rack.",
+          "Wipe exterior of each unit clean — no oil residue on outside.",
+          "Record total units filled and any waste/rejected units.",
         ],
-        "ccps": [2, 3],
-        "ccp_labels": {2: "Test fill weight (g)", 3: "Target fill weight per MMP spec (g)"},
+        "ccps": [2],
+        "ccp_labels": {2: "Cap pull-test — cap does not separate (pass/fail per rack)"},
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {2: "Fail: rework or reject rack. Do not package units with failed pull-test."},
         "notes_required": False,
-      },
-      {
-        "id": "capping_sealing",
-        "name": "Capping & Sealing",
-        "steps": [
-          "Confirm all units are capped securely — no cross-threading",
-          "Apply tamper-evident seal or band if required for this SKU",
-          "Wipe exterior of each unit clean — no oil residue on outside",
-          "Place into individual unit packaging (child-resistant blister, box, or tube)",
-          "Confirm packaging is correctly assembled and child-resistant mechanism works",
-        ],
-        "ccps": [],
-        "ccp_labels": {},
-        "notes_required": False,
-      },
-      {
-        "id": "qc_sample",
-        "name": "QC Sample Check",
-        "steps": [
-          "Pull QC sample: minimum 3 units from run",
-          "Weigh each QC unit — confirm fill weight within tolerance",
-          "Visually inspect for leaks, threading issues, cleanliness",
-          "Activate each QC unit briefly — confirm oil flow and vapor production",
-          "Record QC results — pass or flag for investigation",
-          "Record total approved units and rejected/waste units",
-          "Confirm UID tag remains with batch",
-        ],
-        "ccps": [0],
-        "ccp_labels": {0: "QC unit weights (g) — list all three"},
-        "notes_required": True,
       },
       {
         "id": "packaging",
         "name": "Packaging & Labeling",
         "steps": [
-          "Apply batch label to each outer package — verify all required fields: Product Name, Batch#, UID#, Mfg Date, Exp Date, THC%, net weight",
-          "Confirm 'Contains' allergen statement if applicable",
-          "Inspect label legibility on 5 sample units before full batch labeling",
-          "Box into outer cases — confirm case count",
+          "Place each unit into SKU-correct CR packaging / mylar",
+          "Apply required info sticker — verify all 5 fields: product name, batch#, METRC UID, mfg date, THC%",
+          "Supervisor label approval — mandatory before full labeling run",
+          "20CT case packaging — count and record",
           "Record total packaged unit count",
         ],
-        "ccps": [4],
-        "ccp_labels": {4: "Total packaged units"},
+        "ccps": [1, 3],
+        "ccp_labels": {1: "Label verification — all 5 fields present (yes/no)", 3: "Total packaged units"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "units", "min": 1, "max": 99999}},
+        "corrective_actions": {1: "Any missing field: halt labeling, correct before proceeding.", 3: "Outside 95–105% of filled units: Deviation Log."},
         "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
       },
       {
         "id": "sanitation",
         "name": "Post-Run Sanitation",
         "steps": [
-          "VapeJet: flush all needles, reservoirs, oil lines, tanks with 70–99% ISO-alcohol",
-          "Wipe all exposed VapeJet surfaces with ISO-alcohol",
+          "ISO-flush VapeJet lines, syringe, reservoir, and needle — air dry",
           "Wipe all tabletop counters and surfaces with 70–99% ISO-alcohol",
           "Flush between strains — do not allow cross-contamination of different oil types",
-          "Complete cleaning log entry — date, equipment, method, PPM verified, initials",
+          "Complete cleaning log entry — date, equipment, method, initials (Section 5)",
+          "METRC manufacturing activity entry within 24 hours",
         ],
-        "ccps": [],
-        "ccp_labels": {},
+        "ccps": [4],
+        "ccp_labels": {4: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {4: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {4: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # ROSIN AIO VAPE (.5g Disp & 1g AIO)
+  # Matches BPR-RVP-001 v2.0. Distinct from "vapes" — this SKU
+  # decarboxylates raw live rosin over several days at 76°F BEFORE any
+  # VapeJet fill step. Do not route this to "vapes" — it is not a wash
+  # (that's "rosin_wash") and not a press (that's "rosin_press"); it is
+  # a downstream vape-fill product made FROM already-pressed rosin.
+  # ─────────────────────────────────────────────────────────────────
+  "rosin_vape_decarb": {
+    "label": "Live Rosin Vape — Decarb & Fill (.5g Disp / 1g AIO)",
+    "sop_ref": "MMP-RVP-001 v1.0 / PQP-RVP-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "ISO-flush VapeJet lines, syringe, and reservoir — air dry completely",
+          "Verify rosin COA (and distillate COA for 1g SKU, used as blending agent only) — record METRC UID(s), potency %, weights",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "Confirm hardware (.5g Blinc / 1g AIO) lot matches spec for this SKU",
+          "All tabletop counters and surfaces: 70–99% ISO-alcohol",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Cannabis COA verified — UID / potency / weight recorded"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "No COA or UID mismatch: halt production, contact QA."},
+        "notes_required": False,
+      },
+      {
+        "id": "decarboxylation",
+        "name": "Decarboxylation — Multi-Day (NOT a wash step)",
+        "steps": [
+          "Day 1: place rosin in sterile glass container in vacuum oven at 76°F",
+          "Stir and initial BPR daily stir log — initials required EACH DAY, no exceptions",
+          "Day 2: stir rosin in oven. Check conversion — rosin becoming oil-like.",
+          "Day 3+: continue daily stir and initials until rosin fully converted from THC-a to THC oil form. Do not rush.",
+          "Confirm fluid oil consistency, no solid chunks, before proceeding to blend/fill",
+        ],
+        "ccps": [0, 4],
+        "ccp_labels": {0: "Oven temp (°F) — must hold at 76°F", 4: "Rosin conversion — fluid oil consistency, no solid chunks (pass/fail)"},
+        "ccp_specs": {0: {"unit": "F", "min": 74, "max": 78}, 4: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Outside 74–78°F: adjust oven, re-verify before continuing decarb.", 4: "Not fully converted: continue daily stir cycle, do not proceed to fill."},
+        "notes_required": True,
+      },
+      {
+        "id": "blend",
+        "name": "Blend (1g SKU only)",
+        "steps": [
+          "1g SKU only: once converted, weigh ~50g distillate as blending agent",
+          "Immersion blend rosin + distillate minimum 15 minutes until homogenized",
+          ".5g SKU: skip this phase — proceed directly to fill calibration with converted rosin",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Blend uniformity — ≥15 min, homogenized (1g SKU only)"},
+        "ccp_specs": {1: {"unit": "minutes", "min": 15, "max": 999}},
+        "corrective_actions": {1: "Not homogenized after 15 min: extend blend time before fill."},
+        "notes_required": False,
+      },
+      {
+        "id": "fill_calibration",
+        "name": "Fill Calibration (Mandatory Before Production)",
+        "steps": [
+          "Load rosin (or rosin/distillate blend) into VapeJet reservoir. Purge lines — confirm clean oil at tip, no air bubbles.",
+          "PRE-RUN FILL WEIGHT CALIBRATION: weigh 3 units after pump cycles.",
+          "Confirm average within target: .5g SKU = 0.5g ±0.03g | 1g SKU = 1.0g ±0.05g",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Pre-run calibration weight, avg of 3 units (g) — .5g ±0.03g or 1.0g ±0.05g"},
+        "ccp_specs": {1: {"unit": "g", "min": 0.47, "max": 1.05}},
+        "corrective_actions": {1: "Outside tolerance: adjust VapeJet, re-run 3-unit check. Do NOT begin production run until in spec."},
+        "notes_required": False,
+      },
+      {
+        "id": "filling",
+        "name": "Filling & Capping",
+        "steps": [
+          "Load hardware rack (.5g: 50 units | 1g: 24 units). Run fill cycle — monitor for overflow.",
+          "Transfer to Squish-o-matic 1000. Press Squish — hydraulic cap applied.",
+          "Pull-test spot-check cap seal per rack.",
+          "Record total units filled and any waste/rejected units.",
+        ],
+        "ccps": [2],
+        "ccp_labels": {2: "Cap pull-test — cap does not separate (pass/fail per rack)"},
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {2: "Fail: rework or reject rack. Do not package units with failed pull-test."},
+        "notes_required": False,
+      },
+      {
+        "id": "packaging",
+        "name": "Packaging & Labeling",
+        "steps": [
+          "Place into SKU-correct CR packaging. Apply strain sticker. Heat-seal mylar at 180°F if applicable.",
+          "Apply required info sticker — verify all 5 fields: product name, batch#, METRC UID, mfg date, THC%",
+          "Supervisor label approval — mandatory before full labeling run",
+          "20CT case packaging — count and record",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Label verification — all 5 fields present (yes/no)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Any missing field: halt labeling, correct before proceeding."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "ISO-flush VapeJet lines, syringe, reservoir, and needle — air dry",
+          "Wipe vacuum oven interior with ISO-alcohol",
+          "Wipe all tabletop counters and surfaces with 70–99% ISO-alcohol",
+          "Complete cleaning log entry — date, equipment, method, initials (Section 5)",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [4],
+        "ccp_labels": {4: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {4: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {4: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
         "notes_required": False,
       },
     ]
@@ -2420,6 +2535,1050 @@ BPR_PHASES = {
     ],
   },
 
+  # ─────────────────────────────────────────────────────────────────
+  # PUNCHBAR — STANDARD CHOCOLATE (Distillate or Hash)
+  # Matches BPR-CHO-001 v2.0. Two-pour temper-and-cast process.
+  # NOT for Sugar-Free (different process, hard 87°F stop — see
+  # "punch_chocolate_sf") or Peanut Butter Combo (dedicated dual-line
+  # equipment + mandatory allergen clearance — see "punch_chocolate_pb").
+  # ─────────────────────────────────────────────────────────────────
+  "punch_chocolate": {
+    "label": "Punchbar — Standard Chocolate",
+    "sop_ref": "MMP-CHO-001 v1.0 / PQP-CHO-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "All equipment BONE DRY and sanitized — moisture destroys chocolate, zero tolerance",
+          "Verify cannabis COA (distillate or hash per SKU) — record METRC UID, batch#, potency %, required weight, actual weight, variance, THC/unit",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "Preheat cooling tunnel: setting 7 (~45°F), belt speed 6 — confirm at temp BEFORE first pour",
+          "Allergen control check — confirm no cross-contact with prior run's allergens; verify closed labeled containers",
+        ],
+        "ccps": [0, 1, 3],
+        "ccp_labels": {0: "Equipment dryness — bone dry, zero moisture (pass/fail)", 1: "Cannabis COA verified — UID / potency / weight / variance recorded", 3: "Cooling tunnel temp (°F) — must be at 45°F, belt speed 6, before first pour"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "F", "min": 43, "max": 47}},
+        "corrective_actions": {0: "Any moisture detected: halt, fully dry equipment before proceeding.", 1: "No COA or UID mismatch: halt production, contact QA.", 3: "Not at temp: continue preheat, do not begin pour until confirmed."},
+        "notes_required": False,
+      },
+      {
+        "id": "temper",
+        "name": "Temper",
+        "steps": [
+          "Load chocolate wafers (milk/dark/white per SKU) into temper machine at 120°F",
+          "Stir until internal temp reaches 100–108°F — approximately 40 minutes",
+          "Monitor continuously with temperature gun",
+          "Confirm chocolate fully melted, smooth, no lumps before proceeding",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Internal chocolate temp (°F) — must be 100–108°F"},
+        "ccp_specs": {1: {"unit": "F", "min": 100, "max": 108}},
+        "corrective_actions": {1: "Outside range: continue tempering, re-check every 5 min. Do not proceed until in spec."},
+        "notes_required": False,
+      },
+      {
+        "id": "cannabis_incorporation",
+        "name": "Cannabis Incorporation",
+        "steps": [
+          "CANNABIS INCORPORATION: weigh cannabis per COA-adjusted formula — record actual weight",
+          "Add cannabis to melted chocolate",
+          "Stir minimum 40 minutes until fully homogenized — no visible oil pooling or separation",
+          "Supervisor initials mandatory on this step",
+          "Add SKU-specific inclusions and flavoring — stir until uniform, no clumping",
+        ],
+        "ccps": [0, 2],
+        "ccp_labels": {0: "Actual cannabis weight recorded (g)", 2: "Incorporation — ≥40 min, homogenized, no oil pooling (pass/fail)"},
+        "ccp_specs": {0: {"unit": "g", "min": 0.1, "max": 99999}, 2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Record actual — any variance from COA-adjusted formula noted on BPR.", 2: "Oil pooling/separation after 40 min: continue stirring, do not proceed to pour."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "pour_and_mold",
+        "name": "Pour & Mold (2-Pour Process)",
+        "steps": [
+          "POUR 1: foot pedal dispense — approximately 50% fill into each mold cavity",
+          "Place inclusions per cavity",
+          "Feed molds into cooling tunnel one at a time — no stacking",
+          "Remove molds at tunnel output",
+          "POUR 2: fill remaining cavity with chocolate cap — feed through tunnel again",
+          "Record Pour 1 and Pour 2 timestamps",
+        ],
+        "ccps": [5],
+        "ccp_labels": {5: "Pour 1 and Pour 2 timestamps logged (both required)"},
+        "ccp_specs": {5: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {5: "Missing either timestamp: log deviation, do not release batch until resolved."},
+        "notes_required": False,
+      },
+      {
+        "id": "demold_qc",
+        "name": "Demold & Weight QC",
+        "steps": [
+          "Demold: invert over parchment-lined table, tap firmly",
+          "Inspect bars — no bloom, no cracks",
+          "UNIT WEIGHT SPOT CHECK: weigh 3 units per mold",
+          "Confirm target: 21.75–22.5 g average",
+          "Bloom on any unit = quarantine ENTIRE mold",
+        ],
+        "ccps": [2],
+        "ccp_labels": {2: "Unit weight, avg of 3 per mold (g) — must be 21.75–22.5g"},
+        "ccp_specs": {2: {"unit": "g", "min": 21.75, "max": 22.5}},
+        "corrective_actions": {2: "Outside range or bloom present: quarantine entire mold, log deviation."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "VIDEOJET TEST PRINT: supervisor approves all 5 required fields, font ≥6pt",
+          "Do NOT begin run without supervisor approval",
+          "Ilapak Carrera 500 foil wrap — verify digital sensor pass on each unit",
+          "Feed units face-down through Videojet — confirm print placement legible, no smearing",
+          "Insert into CRP box — align Punch fist logo, lock top securely",
+          "Record total packaged unit count",
+        ],
+        "ccps": [0, 2],
+        "ccp_labels": {0: "Videojet test print — all 5 fields, ≥6pt, supervisor approved (pass/fail)", 2: "Ilapak sensor pass — all units (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt run, correct before proceeding.", 2: "Sensor fail on any unit: pull unit, do not package."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Temper machine and acrylic molds — must return to BONE DRY, no moisture residue",
+          "Cooling tunnel and Ilapak Carrera 500 metal tracks — sanitize per Section 5",
+          "Ilapak conveyor belt — scrape, wash, re-oil chain",
+          "Videojet printer conveyor — ISO-alcohol wipe",
+          "Complete cleaning log entry — date, equipment, method, initials (Section 5)",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [5],
+        "ccp_labels": {5: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {5: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {5: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # PUNCHBAR — SUGAR-FREE (SEEDING METHOD)
+  # Matches BPR-SFB-001 v2.0. Distinct from "punch_chocolate": this is a
+  # two-phase seeding temper with a HARD 87°F pour ceiling — exceeding
+  # it destabilizes the chocolate and destroys the full batch. Do NOT
+  # route Sugar-Free product to "punch_chocolate" — the standard 100–108°F
+  # temper target does not apply here and the seeding steps have no
+  # equivalent in the standard process.
+  # ─────────────────────────────────────────────────────────────────
+  "punch_chocolate_sf": {
+    "label": "Punchbar — Sugar-Free (Seeding Method)",
+    "sop_ref": "MMP-SFB-001 v1.0 / PQP-SFB-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "All equipment BONE DRY — CRITICAL for sugar-free chocolate, moisture = immediate batch failure",
+          "Verify hash COA — record METRC UID, batch#, potency %, required weight, actual weight, variance, THC/unit",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "Preheat cooling tunnel: 45°F, belt speed 6 — confirm BEFORE production",
+          "Allergen control check — hazelnut/milk/soy per SKU, confirm no cross-contact",
+        ],
+        "ccps": [0, 1, 3],
+        "ccp_labels": {0: "Equipment dryness — bone dry, zero moisture (pass/fail)", 1: "Hash COA verified — UID / potency / weight recorded", 3: "Cooling tunnel temp (°F) — must be 45°F, belt speed 6"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "F", "min": 43, "max": 47}},
+        "corrective_actions": {0: "Any moisture detected: halt, fully dry equipment. Immediate batch failure risk.", 1: "No COA or UID mismatch: halt production, contact QA.", 3: "Not at temp: continue preheat before production."},
+        "notes_required": False,
+      },
+      {
+        "id": "seeding_phases",
+        "name": "Seeding — Phase 1 & Phase 2",
+        "steps": [
+          "PHASE 1: load 25 lbs SF chocolate wafers at 120°F",
+          "Monitor with temp gun — target internal 105–110°F",
+          "PHASE 2 SEEDING: once at 105–110°F, gradually add 10 lbs SF chocolate (seeding)",
+          "Stir continuously — lower temperature to approximately 90°F",
+        ],
+        "ccps": [1, 3],
+        "ccp_labels": {1: "Phase 1 internal temp (°F) — target 105–110°F", 3: "Phase 2 seeding temp (°F) — target ~90°F"},
+        "ccp_specs": {1: {"unit": "F", "min": 105, "max": 110}, 3: {"unit": "F", "min": 85, "max": 95}},
+        "corrective_actions": {1: "Outside range: continue heating/cooling, re-check every 5 min.", 3: "Not decreasing toward 90°F: continue stirring, do not proceed to roux until in range."},
+        "notes_required": False,
+      },
+      {
+        "id": "roux_cannabis_incorporation",
+        "name": "Roux — Cannabis Incorporation",
+        "steps": [
+          "ROUX: separately melt 5 lbs SF chocolate",
+          "Add cannabis hash — stir until fully dissolved, no oil pooling",
+          "Add SKU-specific flavoring",
+          "Cannabis MUST be fully incorporated in roux before combining with main batch",
+          "Supervisor initials mandatory on this step",
+          "Record actual hash weight (from roux step) on BPR cannabis traceability block",
+        ],
+        "ccps": [1, 5],
+        "ccp_labels": {1: "Roux — fully dissolved, no oil pooling (pass/fail)", 5: "Actual hash weight recorded (g)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}, 5: {"unit": "g", "min": 0.1, "max": 99999}},
+        "corrective_actions": {1: "Oil pooling present: continue stirring, do not combine until resolved.", 5: "Record actual — any variance from formula noted on BPR."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "temper_and_snap_test",
+        "name": "Final Temper & Snap Test",
+        "steps": [
+          "Add remaining chocolate a handful at a time while stirring",
+          "Target final temper: 85°F — 87°F is the ABSOLUTE MAXIMUM",
+          "STOP and cool if approaching 87°F",
+          "Snap test on small sample — crisp snap = properly tempered, smooth and glossy",
+          "If no snap or bloom present: DO NOT POUR",
+        ],
+        "ccps": [1, 3],
+        "ccp_labels": {1: "Final temper temp (°F) — target 85°F, 87°F HARD MAX", 3: "Snap test — crisp snap, no bloom (pass/fail)"},
+        "ccp_specs": {1: {"unit": "F", "min": 80, "max": 87}, 3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Approaching or exceeding 87°F: STOP immediately, cool to 80°F before continuing. Batch loss risk above 87°F.", 3: "Fail: do not pour. Re-temper and re-test."},
+        "notes_required": False,
+      },
+      {
+        "id": "pour_87f_hardstop",
+        "name": "Pour — 87°F Hard Stop Monitoring",
+        "steps": [
+          "POUR 1: foot pedal — monitor temp gun CONTINUOUSLY throughout pour",
+          "If temp exceeds 87°F: PAUSE immediately, lower to 80°F, stir, wait before resuming",
+          "Feed molds through cooling tunnel",
+          "Remove at tunnel output",
+          "POUR 2: fill remaining cavity — feed through tunnel again",
+          "Record Pour 1 and Pour 2 timestamps",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Pour temp — never exceeded 87°F, pause protocol followed if it did (pass/fail)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Any exceedance not immediately paused/cooled: log deviation, notify QA — full batch loss risk."},
+        "notes_required": True,
+      },
+      {
+        "id": "demold_qc",
+        "name": "Demold & Weight QC",
+        "steps": [
+          "Demold — inspect bars, no bloom, no cracks",
+          "UNIT WEIGHT: 3 per mold, target 21.75–22.5 g average",
+          "Snap test on demolded units",
+          "BLOOM on any unit = quarantine ENTIRE mold",
+        ],
+        "ccps": [1, 3],
+        "ccp_labels": {1: "Unit weight, avg of 3 per mold (g) — must be 21.75–22.5g", 3: "Bloom inspection — zero bloom across all units (pass/fail)"},
+        "ccp_specs": {1: {"unit": "g", "min": 21.75, "max": 22.5}, 3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Outside range: quarantine mold, log deviation.", 3: "Any bloom: quarantine entire mold."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "VIDEOJET TEST PRINT: supervisor approves all 5 required fields, font ≥6pt",
+          "Ilapak Carrera 500 foil wrap — verify sensor pass on each unit",
+          "Label, insert into CRP box",
+          "Record total packaged unit count",
+        ],
+        "ccps": [0],
+        "ccp_labels": {0: "Videojet test print — all 5 fields, supervisor approved (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt run, correct before proceeding."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Temper machine and acrylic molds — return to BONE DRY, no moisture residue",
+          "Cooling tunnel and Ilapak tracks — sanitize per Section 5",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {3: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # PUNCHBAR — PEANUT BUTTER COMBO
+  # Matches BPR-PBC-001 v2.0. TOP-9 ALLERGEN (PEANUTS) — dedicated
+  # dual-temper equipment with physically separated paddles, and
+  # MANDATORY allergen clearance both before and after the run. Do not
+  # route this SKU to "punch_chocolate" — the allergen-clearance CCPs
+  # here are safety-critical and have no equivalent there.
+  # ─────────────────────────────────────────────────────────────────
+  "punch_chocolate_pb": {
+    "label": "Punchbar — Peanut Butter Combo",
+    "sop_ref": "MMP-PBC-001 v1.0 / PQP-PBC-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production_allergen_clearance",
+        "name": "Pre-Production & Allergen Clearance (Mandatory)",
+        "steps": [
+          "PRE-RUN ALLERGEN CLEARANCE: supervisor verifies full allergen sanitation of all equipment from previous run",
+          "Swab test if transitioning from a non-peanut product",
+          "Sign allergen clearance block — mandatory before any peanut butter is introduced",
+          "Confirm DEDICATED PADDLES are labeled and physically separated — no cross-contact points between PB and chocolate lines",
+          "All equipment BONE DRY",
+          "Verify cannabis COA — record METRC UID, potency %, weight, variance, THC/unit",
+          "Preheat cooling tunnel: 45°F, belt speed 6",
+        ],
+        "ccps": [0, 3, 5],
+        "ccp_labels": {0: "Pre-run allergen clearance — prior residue removed, supervisor signed (pass/fail)", 3: "Dedicated paddles confirmed labeled and separated (pass/fail)", 5: "Cannabis COA verified — UID / potency / weight recorded"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "boolean", "min": 1, "max": 1}, 5: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Clearance not signed: DO NOT START production — this is a hard stop.", 3: "Paddles not separated: correct and re-verify before production.", 5: "No COA or UID mismatch: halt production, contact QA."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "dual_temper",
+        "name": "Dual Temper Setup",
+        "steps": [
+          "DUAL TEMPER: load 25 lbs PB wafers into Machine #1, 25 lbs chocolate into Machine #2 — both at 120°F",
+          "Monitor BOTH machines with temp gun — target 100–108°F",
+          "Stir EACH vessel with its DEDICATED PADDLE — no cross-contact between paddles",
+          "Approximately 40 minutes each until uniformly melted",
+        ],
+        "ccps": [1, 2],
+        "ccp_labels": {1: "Both machines internal temp (°F) — must be 100–108°F", 2: "No cross-contact between dedicated paddles (pass/fail)"},
+        "ccp_specs": {1: {"unit": "F", "min": 100, "max": 108}, 2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Either machine outside range: continue tempering, re-check every 5 min.", 2: "Cross-contact detected: stop, full allergen clean-out required before continuing."},
+        "notes_required": False,
+      },
+      {
+        "id": "cannabis_incorporation",
+        "name": "Cannabis Incorporation",
+        "steps": [
+          "CANNABIS INCORPORATION: add cannabis to the PB vessel only — stir until homogenized",
+          "Record actual cannabis weight",
+          "Supervisor initials mandatory on this step",
+          "Add SKU inclusions (crushed peanuts, jelly per SKU) — stir to incorporate",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Actual cannabis weight recorded (g)"},
+        "ccp_specs": {1: {"unit": "g", "min": 0.1, "max": 99999}},
+        "corrective_actions": {1: "Record actual — any variance from COA-adjusted formula noted on BPR."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "pour_and_mold",
+        "name": "Pour & Mold (2-Pour Process)",
+        "steps": [
+          "POUR 1: foot pedal — PB mixture to approximately 50% fill each cavity",
+          "Feed molds through cooling tunnel — remove at output",
+          "POUR 2: dispense chocolate (Machine #2) to complete fill — feed through tunnel again",
+          "Record Pour 1 and Pour 2 timestamps",
+        ],
+        "ccps": [2],
+        "ccp_labels": {2: "Pour 1 and Pour 2 timestamps logged (both required)"},
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {2: "Missing either timestamp: log deviation before releasing batch."},
+        "notes_required": False,
+      },
+      {
+        "id": "demold_qc",
+        "name": "Demold & Weight QC",
+        "steps": [
+          "Demold — unit weight: 3 per mold, target 21.75–22.5 g average",
+          "Inspect — no bloom, no cracks",
+        ],
+        "ccps": [0],
+        "ccp_labels": {0: "Unit weight, avg of 3 per mold (g) — must be 21.75–22.5g"},
+        "ccp_specs": {0: {"unit": "g", "min": 21.75, "max": 22.5}},
+        "corrective_actions": {0: "Outside range or bloom present: quarantine mold, log deviation."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_and_postrun_allergen_clearance",
+        "name": "Labeling & Post-Run Allergen Clearance (Mandatory)",
+        "steps": [
+          "VIDEOJET TEST PRINT: supervisor approves all 5 required fields",
+          "Ilapak wrap — sensor pass. Label. CRP box.",
+          "POST-RUN ALLERGEN CLEARANCE: full sanitation of ALL PB-contact equipment",
+          "Document clearance on Section 5 — supervisor sign-off MANDATORY",
+        ],
+        "ccps": [0, 2],
+        "ccp_labels": {0: "Videojet test print — all 5 fields, supervisor approved (pass/fail)", 2: "Post-run allergen clearance — all PB-contact surfaces sanitized, supervisor signed (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt run, correct before proceeding.", 2: "Clearance not signed: batch and equipment held — cannot release or reuse equipment for non-peanut product."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Final Sanitation & METRC Entry",
+        "steps": [
+          "Confirm all PB-contact and chocolate-contact equipment fully sanitized per Section 5",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [2],
+        "ccp_labels": {2: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {2: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # COOKIE DELIGHT BARS
+  # Matches BPR-CKD-001 v2.0. Shares the punch_chocolate temper/pour
+  # skeleton (single temper machine, distillate OR hash, 100–108°F,
+  # 21.75–22.5g), but with a time-critical cookie embed inserted
+  # between Pour 1 and Pour 2, and a pre-count/type-verification CCP
+  # that punch_chocolate has no equivalent for (wrong cookie type in
+  # the wrong SKU is a mislabeling risk, not just a quality miss).
+  # ─────────────────────────────────────────────────────────────────
+  "punch_cookie_delight": {
+    "label": "Cookie Delight Bars",
+    "sop_ref": "MMP-CKD-001 v1.0 / PQP-CKD-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "All equipment BONE DRY and sanitized — verify per Section 5",
+          "Verify cannabis COA (distillate or hash per SKU) — record METRC UID, potency %, required weight, actual weight, variance, THC/unit",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "COOKIE COUNT & TYPE VERIFICATION: confirm correct cookie type for this SKU — vanilla shortbread vs chocolate shortbread",
+          "Pre-count 960 cookies — record count on BPR",
+          "Preheat cooling tunnel: 45°F, belt speed 6 — confirm BEFORE production",
+        ],
+        "ccps": [0, 1, 3, 4, 5],
+        "ccp_labels": {
+          0: "Equipment dryness — bone dry, zero moisture (pass/fail)",
+          1: "Cannabis COA verified — UID / potency / weight / variance recorded",
+          3: "Cookie type confirmed correct for this SKU (pass/fail)",
+          4: "Cookies pre-counted (must equal 960)",
+          5: "Cooling tunnel temp (°F) — must be 45°F, belt speed 6",
+        },
+        "ccp_specs": {
+          0: {"unit": "boolean", "min": 1, "max": 1},
+          1: {"unit": "boolean", "min": 1, "max": 1},
+          3: {"unit": "boolean", "min": 1, "max": 1},
+          4: {"unit": "count", "min": 960, "max": 960},
+          5: {"unit": "F", "min": 43, "max": 47},
+        },
+        "corrective_actions": {
+          0: "Any moisture detected: halt, fully dry equipment before proceeding.",
+          1: "No COA or UID mismatch: halt production, contact QA.",
+          3: "Wrong cookie type pulled for this SKU: halt, swap stock before production — mislabeling risk if run continues.",
+          4: "Count does not equal 960: recount before starting. Do not estimate.",
+          5: "Not at temp: continue preheat, do not begin pour until confirmed.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "temper",
+        "name": "Temper",
+        "steps": [
+          "Melt chocolate wafers (milk/dark/white per SKU) at 120°F",
+          "Stir until internal temp reaches 100–108°F — approximately 40 minutes",
+          "Monitor continuously with temperature gun",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Internal chocolate temp (°F) — must be 100–108°F"},
+        "ccp_specs": {1: {"unit": "F", "min": 100, "max": 108}},
+        "corrective_actions": {1: "Outside range: continue tempering, re-check every 5 min. Do not proceed until in spec."},
+        "notes_required": False,
+      },
+      {
+        "id": "cannabis_incorporation",
+        "name": "Cannabis Incorporation",
+        "steps": [
+          "CANNABIS INCORPORATION: add cannabis to melted chocolate — record actual weight",
+          "Stir minimum 40 minutes until fully homogenized — no visible oil pooling",
+          "Add SKU-specific flavoring",
+          "Supervisor initials mandatory on this step",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {0: "Actual cannabis weight recorded (g)", 1: "Incorporation — ≥40 min, homogenized, no oil pooling (pass/fail)"},
+        "ccp_specs": {0: {"unit": "g", "min": 0.1, "max": 99999}, 1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Record actual — any variance from COA-adjusted formula noted on BPR.", 1: "Oil pooling/separation after 40 min: continue stirring, do not proceed to pour."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "pour_and_cookie_embed",
+        "name": "Pour 1, Cookie Embed & Pour 2",
+        "steps": [
+          "POUR 1: foot pedal dispense — approximately 50% fill into each mold cavity",
+          "COOKIE EMBED WHILE HOT: place exactly 1 cookie per cavity, centered, while chocolate is still hot",
+          "Feed molds into cooling tunnel IMMEDIATELY — no delay, chocolate must still be molten around the cookie",
+          "Remove molds at tunnel output",
+          "POUR 2: fill remaining cavity with chocolate cap — feed through tunnel again",
+          "Record Pour 1 and Pour 2 timestamps",
+        ],
+        "ccps": [1, 5],
+        "ccp_labels": {
+          1: "Cookie embed — centered, embedded while hot, fed into tunnel immediately (pass/fail)",
+          5: "Pour 1 and Pour 2 timestamps logged (both required)",
+        },
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}, 5: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          1: "Cookie not embedded while hot, off-center, or tunnel feed delayed: reject cavity — do not proceed with a cooled or misaligned embed.",
+          5: "Missing either timestamp: log deviation, do not release batch until resolved.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "demold_qc",
+        "name": "Demold & Weight QC",
+        "steps": [
+          "Demold: invert over parchment-lined table, tap firmly",
+          "Confirm cookie is visible and intact at the base of each bar",
+          "UNIT WEIGHT SPOT CHECK: weigh 3 units per mold — target 21.75–22.5 g average",
+          "Confirm cookie remains intact inside each bar — not shattered or displaced",
+        ],
+        "ccps": [1, 2],
+        "ccp_labels": {1: "Cookie intact and visible at base (pass/fail)", 2: "Unit weight, avg of 3 per mold (g) — must be 21.75–22.5g"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}, 2: {"unit": "g", "min": 21.75, "max": 22.5}},
+        "corrective_actions": {1: "Cookie broken/displaced/not visible: quarantine mold, log deviation.", 2: "Outside range: quarantine mold, log deviation."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "VIDEOJET TEST PRINT: supervisor approves all 5 required fields, font ≥6pt",
+          "Ilapak Carrera 500 foil wrap — verify digital sensor pass on each unit",
+          "Insert into CRP box",
+          "Record total packaged unit count",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {0: "Videojet test print — all 5 fields, supervisor approved (pass/fail)", 1: "Ilapak sensor pass — all units (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt run, correct before proceeding.", 1: "Sensor fail on any unit: pull unit, do not package."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Temper machine and molds — return to BONE DRY, no moisture residue",
+          "Cooling tunnel and Ilapak tracks — sanitize per Section 5",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {3: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # SOLVENTLESS MALT BALLS 100mg
+  # Matches BPR-MLT-001 v2.0. Structurally unlike the punch_chocolate
+  # family (no temper/mold/pour) — this is a panning process spanning
+  # TWO CALENDAR DAYS with a mandatory 24-hour rest between coating and
+  # glossing, and independent humidity CCPs gating both days. Do NOT
+  # rush the Day 1 → Day 2 boundary or treat this as a same-day recipe.
+  # ─────────────────────────────────────────────────────────────────
+  "punch_malt_balls": {
+    "label": "Solventless Malt Balls 100mg",
+    "sop_ref": "MMP-MLT-001 v1.0 / PQP-MLT-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production_day1",
+        "name": "Pre-Production Setup — Day 1",
+        "steps": [
+          "Panner machine fully cleaned, sanitized, DRY — line bin with new plastic liner",
+          "Verify hash COA — record METRC UID, batch#, potency %, required weight, actual weight, variance, THC/unit",
+          "Supervisor sign-off on cannabis verification — mandatory before processing",
+          "HUMIDITY CHECK — DAY 1: record humidity reading — must be 30–50% RH before coating begins",
+        ],
+        "ccps": [0, 1, 3],
+        "ccp_labels": {
+          0: "Panner clean, sanitized, dry, new liner (pass/fail)",
+          1: "Cannabis COA verified — UID / potency / weight / variance recorded",
+          3: "Day 1 humidity (%RH) — must be 30–50% RH before coating",
+        },
+        "ccp_specs": {
+          0: {"unit": "boolean", "min": 1, "max": 1},
+          1: {"unit": "boolean", "min": 1, "max": 1},
+          3: {"unit": "%RH", "min": 30, "max": 50},
+        },
+        "corrective_actions": {
+          0: "Any residue, moisture, or old liner present: re-clean and re-line before proceeding.",
+          1: "No COA or UID mismatch: halt production, contact QA.",
+          3: "Outside 30–50% RH: delay coating and document. Do not begin outside range.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "chocolate_cannabis_prep",
+        "name": "Chocolate Melt & Cannabis Incorporation",
+        "steps": [
+          "Melt chocolate wafers at 120°F",
+          "Stir until internal temp reaches 100–108°F",
+          "Add hash — stir until homogenized, no oil pooling",
+          "Record actual hash weight added",
+          "Supervisor initials mandatory on this step",
+        ],
+        "ccps": [1, 3],
+        "ccp_labels": {1: "Internal chocolate temp (°F) — must be 100–108°F", 3: "Actual hash weight recorded (g) — per MMP ±0.2g"},
+        "ccp_specs": {1: {"unit": "F", "min": 100, "max": 108}, 3: {"unit": "g", "min": 0.1, "max": 99999}},
+        "corrective_actions": {1: "Outside range: continue tempering, re-check every 5 min.", 3: "Record actual — any variance from COA-adjusted formula noted on BPR."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "panning_coat",
+        "name": "Panning — Coat (Day 1)",
+        "steps": [
+          "Load malt ball centers into panner",
+          "Set cold air to 44°F",
+          "Set sprayer cycle: 1 minute on / 20 seconds off",
+          "Tumble at 45° rotation",
+          "Spray ALL chocolate onto malt ball centers — verify uniform coating, no bare spots, before switching to hot air",
+          "Switch to hot air at 113°F for approximately 10 minutes — monitor closely, do not overheat",
+          "Confirm chocolate is smooth, not separating",
+          "Switch back to cold air — tumble approximately 10 minutes to harden",
+        ],
+        "ccps": [1, 5, 6],
+        "ccp_labels": {
+          1: "Cold air temp (°F) — must be 44°F",
+          5: "Hot air temp (°F) — must be 113°F, ~10 min",
+          6: "Chocolate coating texture — smooth, not separating (pass/fail)",
+        },
+        "ccp_specs": {
+          1: {"unit": "F", "min": 42, "max": 46},
+          5: {"unit": "F", "min": 111, "max": 115},
+          6: {"unit": "boolean", "min": 1, "max": 1},
+        },
+        "corrective_actions": {
+          1: "Outside range: adjust panner, re-verify before spraying.",
+          5: "Overheating risk: reduce heat immediately, monitor continuously.",
+          6: "Separation/graininess observed: stop hot air cycle, cool and reassess before continuing.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "rest_24hr",
+        "name": "24-Hour Rest (Mandatory Before Glossing)",
+        "steps": [
+          "24-HOUR REST: remove product from panner immediately after Day 1 coating",
+          "Record rest START time",
+          "Hold undisturbed minimum 24 hours before glossing — DO NOT rush",
+          "Record rest END time and confirm 24 hours has elapsed before proceeding to Day 2",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "Rest duration (hours) — must be ≥24 hrs before glossing"},
+        "ccp_specs": {3: {"unit": "hours", "min": 24, "max": 72}},
+        "corrective_actions": {3: "Less than 24 hrs elapsed: continue rest, do not begin Day 2 gloss steps early."},
+        "notes_required": False,
+      },
+      {
+        "id": "day2_setup_and_humidity",
+        "name": "Day 2 Setup & Humidity Check",
+        "steps": [
+          "DAY 2: CLEAN PANNER COMPLETELY before adding any polishing compounds — chocolate residue ruins gloss drying",
+          "HUMIDITY CHECK — DAY 2: confirm 30–50% RH, air temp approximately 60°F",
+          "Record humidity and air temp on BPR",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {0: "Panner clean — no chocolate residue before gloss compounds added (pass/fail)", 1: "Day 2 humidity (%RH) — must be 30–50% RH"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "%RH", "min": 30, "max": 50}},
+        "corrective_actions": {0: "Any chocolate residue present: re-clean panner fully before proceeding.", 1: "Outside 30–50% RH: DO NOT gloss — delay and document."},
+        "notes_required": False,
+      },
+      {
+        "id": "glossing_and_sealing",
+        "name": "Glossing & Sealing",
+        "steps": [
+          "1st Gloss: apply 3 g PO-TT154A per kg product — run 10 minutes",
+          "Record g/kg and run time for 1st gloss",
+          "2nd Gloss: apply 2 g PO-TT154A per kg — run 10 minutes",
+          "Record g/kg and run time for 2nd gloss",
+          "3rd Gloss (optional): apply 1 g per kg if additional shine needed — run 10 minutes, inspect before deciding",
+          "SEALING: 1 application GZ-F400 at 2 g per kg — run 5 minutes",
+        ],
+        "ccps": [1, 3, 5],
+        "ccp_labels": {
+          1: "1st gloss applied (g/kg) — target 3 g/kg, 10 min run",
+          3: "2nd gloss applied (g/kg) — target 2 g/kg, 10 min run",
+          5: "Sealing (GZ-F400) applied (g/kg) — target 2 g/kg, 5 min run",
+        },
+        "ccp_specs": {
+          1: {"unit": "g/kg", "min": 3, "max": 3},
+          3: {"unit": "g/kg", "min": 2, "max": 2},
+          5: {"unit": "g/kg", "min": 2, "max": 2},
+        },
+        "corrective_actions": {
+          1: "Amount/time off target: record actual, note deviation.",
+          3: "Amount/time off target: record actual, note deviation.",
+          5: "Sealing incomplete or off target: re-run before packaging — seal integrity depends on this step.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "VIDEOJET TEST PRINT: supervisor approves all 5 required fields, font ≥6pt",
+          "Feed packaging bottom-up",
+          "Fill each CR tube with exactly 10 quality-approved malt balls",
+          "Inspect for foreign material",
+          "Apply CR cap",
+          "Apply CA warning tamper-proof label across cap-to-tube junction",
+          "Pull-test label seam — must be continuous across junction, no gaps",
+        ],
+        "ccps": [0, 6],
+        "ccp_labels": {0: "Videojet test print — all 5 fields, supervisor approved (pass/fail)", 6: "Tamper label pull-test — continuous across cap-to-tube junction (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 6: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt run, correct before proceeding.", 6: "Gap or fail on pull-test: re-apply label, re-test before packaging."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Post-production clean-down — complete Section 5 end times",
+          "Panner, sprayer/injector, humidity sensor — clean and store per Section 5",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {3: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # STINGER PRE-ROLLS 2.5g 5-PACK (Flower + Distillate + Kief)
+  # Matches BPR-STG-001 v2.0. Distinct from Rosin Rocket — Stinger uses
+  # spray + paint + kief-roll on ground flower loaded into an ActionPac
+  # cone filler, with a mandatory 4-6hr post-roll dry before jarring.
+  # Rocket uses whole-flower hand-rolling with a frozen pre-weighed
+  # rosin worm — no ActionPac, no kief, no dry-time gate. These are
+  # NOT interchangeable processes; Rocket gets its own family.
+  # ─────────────────────────────────────────────────────────────────
+  "punch_stinger": {
+    "label": "Stinger Pre-Rolls 2.5g 5-Pack",
+    "sop_ref": "MMP-STG-001 v1.0 / PQP-STG-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "ISO-clean grinder, spray gun, magnetic stirrer, ActionPac, paint brushes, and rolling trays — air dry",
+          "Verify COAs for flower, distillate, AND kief — all 3 required. Record all 3 METRC UIDs, all 3 potencies, all 3 weights.",
+          "Supervisor sign-off on all 3 cannabis verifications — mandatory before processing",
+          "Apply strain-specific sticker to each glass jar BEFORE filling — confirm sticker matches strain being produced",
+        ],
+        "ccps": [0, 1, 3],
+        "ccp_labels": {
+          0: "Equipment clean and dry — grinder, spray gun, stirrer, ActionPac, brushes, trays (pass/fail)",
+          1: "All 3 cannabis COAs verified — flower / distillate / kief UIDs, potencies, weights recorded",
+          3: "Jar strain sticker matches batch strain (pass/fail)",
+        },
+        "ccp_specs": {
+          0: {"unit": "boolean", "min": 1, "max": 1},
+          1: {"unit": "boolean", "min": 1, "max": 1},
+          3: {"unit": "boolean", "min": 1, "max": 1},
+        },
+        "corrective_actions": {
+          0: "Any residue present: re-clean before proceeding.",
+          1: "Any of the 3 COAs missing or UID mismatch: halt production, contact QA.",
+          3: "Sticker/strain mismatch: correct before filling — do not fill mismatched jars.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "grind_and_coat",
+        "name": "Grind & Spray Coat",
+        "steps": [
+          "Grind 10 lbs flower to shake consistency using commercial grinder — uniform grind, no whole buds",
+          "SPRAY: mix 9.5g terpenes + 300g distillate in spray gun — spray evenly over all ground flower, no dry spots",
+          "PAINTING MIX: combine remaining terpenes + remaining distillate — magnetic stir until uniform. This is the painting solution used later.",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Spray coat coverage — no dry spots on flower (pass/fail)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Dry spots present: re-spray affected flower before proceeding to fill."},
+        "notes_required": False,
+      },
+      {
+        "id": "cone_fill_calibration",
+        "name": "Cone Fill Calibration (Mandatory Before Production)",
+        "steps": [
+          "ACTIONPAC CALIBRATION: load coated flower into ActionPac — verify setting: 0.5g per cone",
+          "Run 3 test cones. Weigh all 3 on certified scale. Confirm average within 0.5g ±0.05g. MANDATORY before production run.",
+          "Fill cones. Spot-weigh 5 cones per batch. Record on CCP log.",
+          "Twist end of each cone to close. Snip excess paper.",
+        ],
+        "ccps": [1, 2],
+        "ccp_labels": {
+          1: "ActionPac calibration weight, avg of 3 test cones (g) — must be 0.5g ±0.05g",
+          2: "Production spot-check, avg of 5 cones per batch (g) — must be 0.5g ±0.05g",
+        },
+        "ccp_specs": {1: {"unit": "g", "min": 0.45, "max": 0.55}, 2: {"unit": "g", "min": 0.45, "max": 0.55}},
+        "corrective_actions": {
+          1: "Outside tolerance: adjust ActionPac, re-run 3-cone check. Do NOT begin production run until in spec.",
+          2: "Outside tolerance: pause run, re-calibrate, re-check before continuing.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "painting_and_kief",
+        "name": "Painting & Kief Roll",
+        "steps": [
+          "PAINTING: using soft bristle brush, coat each joint paper evenly with painting mixture — uniform coat, no drips, no bare patches",
+          "KIEF ROLLING: IMMEDIATELY roll the wet joint in kief tray — kief adheres to the distillate coating. Must be done while still wet.",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {
+          0: "Painting coat — uniform, no drips, no bare patches (pass/fail)",
+          1: "Kief adhesion — rolled while wet, full coverage (pass/fail)",
+        },
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          0: "Drips or bare patches: touch up before kief roll — coating must be complete before kief step.",
+          1: "Joint dried before kief rolling: kief will not adhere — reject and redo from painting step.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "drying",
+        "name": "Drying (4-6 Hour Minimum, Mandatory Before Jarring)",
+        "steps": [
+          "DRYING: place finished joints on clean rolling tray immediately after kief rolling",
+          "Record drying START time",
+          "Hold undisturbed minimum 4–6 hours at room temperature — DO NOT package wet",
+          "Record drying END time and confirm total drying duration",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "Drying duration (hours) — must be ≥4–6 hrs before jarring"},
+        "ccp_specs": {3: {"unit": "hours", "min": 4, "max": 24}},
+        "corrective_actions": {3: "Less than 4 hrs elapsed: continue drying, do not proceed to jarring."},
+        "notes_required": False,
+      },
+      {
+        "id": "qc_jarring",
+        "name": "Dryness QC & Jarring",
+        "steps": [
+          "Verify joints fully dry — firm to touch, no tackiness",
+          "Place 5 approved Stinger joints into 1 glass CR jar",
+          "Apply color-coordinated cap matching strain",
+        ],
+        "ccps": [0],
+        "ccp_labels": {0: "Joint dryness — firm to touch, no tackiness (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Tacky or soft joints: continue drying, do not jar until firm."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "Apply required info sticker — verify all 5 fields: product name, batch#, METRC UID, mfg date, THC%",
+          "Supervisor label approval — mandatory before full labeling run",
+          "25CT distribution packaging — 20 jars per shipper",
+          "Count and record total packaged units",
+        ],
+        "ccps": [0],
+        "ccp_labels": {0: "Label verification — all 5 fields present, supervisor approved (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt labeling, correct before proceeding."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Post-production clean-down — complete Section 5 end times",
+          "ISO-clean grinder, spray gun, ActionPac, and brushes — inspect for residue",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {3: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
+  # ─────────────────────────────────────────────────────────────────
+  # ROSIN ROCKET PRE-ROLL 1.6g SINGLE (Flower + Live Rosin Worm)
+  # Matches BPR-RKT-001 v2.0. Distinct from Stinger — Rocket is a
+  # hand-rolled single joint built around a frozen pre-weighed rosin
+  # worm inserted mid-roll (must stay frozen until the moment of use,
+  # then placed and rolled QUICKLY before it softens). No ActionPac,
+  # no kief coat, no spray/paint stage, no multi-hour dry-time gate —
+  # do not route this SKU to punch_stinger.
+  # ─────────────────────────────────────────────────────────────────
+  "rosin_rocket": {
+    "label": "Rosin Rocket Pre-Roll 1.6g Single",
+    "sop_ref": "MMP-RKT-001 v1.0 / PQP-RKT-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "pre_production",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "ISO-wipe all rolling trays, tools, and plastic weighing cups — air dry",
+          "Verify flower AND rosin COAs — both required. Record both METRC UIDs, both potencies, both weights.",
+          "Supervisor sign-off on both cannabis verifications — mandatory before processing",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {
+          0: "Equipment clean and dry — trays, tools, cups (pass/fail)",
+          1: "Both cannabis COAs verified — flower / rosin UIDs, potencies, weights recorded",
+        },
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          0: "Any residue present: re-clean before proceeding.",
+          1: "Either COA missing or UID mismatch: halt production, contact QA.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "pre_weigh",
+        "name": "Flower & Rosin Worm Pre-Weigh",
+        "steps": [
+          "FLOWER PRE-WEIGH: pre-weigh flower into clean plastic cups at 1.3g per cup (±0.05g). Seal and bag in groups of 100.",
+          "ROSIN WORM PRE-WEIGH: pre-weigh rosin at 0.3g balls (±0.05g). Roll each into a thin worm shape.",
+          "Place rosin worms on parchment in freezer — keep FROZEN until the moment of use",
+          "Glass tip prep: apply GlueGar (non-toxic) to adhere paper crutch to each glass tip — allow to dry. NO saliva.",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {
+          0: "Flower pre-weigh per cup (g) — must be 1.3g ±0.05g",
+          1: "Rosin worm pre-weigh (g) — must be 0.3g ±0.05g",
+        },
+        "ccp_specs": {0: {"unit": "g", "min": 1.25, "max": 1.35}, 1: {"unit": "g", "min": 0.25, "max": 0.35}},
+        "corrective_actions": {
+          0: "Outside tolerance: adjust and re-weigh cup before sealing.",
+          1: "Outside tolerance: adjust and re-weigh worm before freezing.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "rolling_assembly",
+        "name": "Rolling Assembly",
+        "steps": [
+          "Grind 1 cup of pre-weighed flower per rolling session on a clean rolling tray",
+          "Place rolling paper on tray — position glass tip at one end, glass end protruding beyond paper",
+          "Distribute ground flower evenly along paper — no gaps",
+        ],
+        "ccps": [],
+        "ccp_labels": {},
+        "ccp_specs": {},
+        "corrective_actions": {},
+        "notes_required": False,
+      },
+      {
+        "id": "rosin_placement_and_seal",
+        "name": "Rosin Placement & Seal (Time-Critical)",
+        "steps": [
+          "ROSIN: remove 1 worm from freezer. Place on top of flower approximately 1/4 from the tip end.",
+          "Work QUICKLY — rosin softens fast once removed from freezer. Roll immediately after placement.",
+          "Press and roll paper into a cylinder — even distribution, no voids",
+          "Apply GlueGar along the gum line. Roll final flap to seal. NO saliva.",
+          "Tap glass tip on tray to pack flower. Fill remaining space. Leave ~3mm paper at tip end, twist to close. Apply logo sticker.",
+        ],
+        "ccps": [0, 3],
+        "ccp_labels": {
+          0: "Rosin worm removed from freezer immediately before placement (pass/fail)",
+          3: "Seal — GlueGar only on gum line, no saliva contact (pass/fail)",
+        },
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          0: "Worm sat out too long and softened before placement/roll: discard worm, use a fresh frozen one.",
+          3: "Any saliva contact: reject unit — do not package. Redo with GlueGar only.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "unit_weight_qc",
+        "name": "Unit Weight QC",
+        "steps": [
+          "UNIT WEIGHT CHECK: weigh each finished joint on certified scale",
+          "Confirm target: 1.6g ±0.1g. Record on CCP log.",
+          "Out-of-range: rework or reject the unit",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Finished joint weight (g) — must be 1.6g ±0.1g"},
+        "ccp_specs": {1: {"unit": "g", "min": 1.5, "max": 1.7}},
+        "corrective_actions": {1: "Outside tolerance: rework if possible, otherwise reject — do not package out-of-spec units."},
+        "notes_required": False,
+      },
+      {
+        "id": "tube_and_pouch_seal",
+        "name": "Tube Insert & Pouch Seal",
+        "steps": [
+          "Insert 1 quality-approved Rocket into glass CR tube. Apply plastic cap securely.",
+          "Insert glass tube into 3-sided CRP pouch. Seal using band sealer at 180°F. Inspect seal integrity.",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Pouch seal — 180°F, continuous, no gaps (pass/fail)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Seal gap or failure: re-seal before packaging. Do not ship units with an incomplete seal."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "Apply required info sticker — verify all 5 fields: product name, batch#, METRC UID, mfg date, THC%",
+          "Supervisor label approval — mandatory before full labeling run",
+          "10CT case packaging — count and record total packaged units",
+        ],
+        "ccps": [0],
+        "ccp_labels": {0: "Label verification — all 5 fields present, supervisor approved (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any field missing/illegible: halt labeling, correct before proceeding."},
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Post-production clean-down — complete Section 5 end times",
+          "ISO-wipe rolling trays, tools, and cups — air dry",
+          "Verify freezer temp and clean interior per Section 5",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [4],
+        "ccp_labels": {4: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {4: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {4: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
 }
 
 DR_NORMS_PREFIXES = ("dr. norm", "dr norm", "dr.norm", "norms", "doctor norm")
@@ -2429,54 +3588,103 @@ def detect_product_family(item_name: str, category: str = "",
     """
     bpr_type param added: "wash" or "press" routes rosin correctly.
     Called from /bpr/create with the extra field.
+
+    IMPORTANT: every return value below is validated against BPR_PHASES
+    before this function returns (see the safety check at the bottom).
+    That check exists because this function previously returned family
+    names — "punch_chocolate", "punch_cookie_delight", "punch_malt_balls",
+    "punch_stinger", "rosin_aio", "rosin_rocket" — that had no matching
+    entry in BPR_PHASES, which meant creating a BPR for any of those
+    products would fail. Do NOT add a new `return "some_family"` line
+    here without also adding "some_family" to BPR_PHASES — the safety
+    check will otherwise silently fall back to None (unmapped) rather
+    than crash, but the product still won't route anywhere useful.
     """
     n = (item_name or "").lower().strip()
     c = (category or "").lower().strip()
     t = (bpr_type or "").lower().strip()
+    family = None
 
     # Dr. Norm's — runs first
     is_norms = any(n.startswith(p) for p in DR_NORMS_PREFIXES)
     if is_norms:
         if any(x in n for x in ("sleep bite", "sleep bites", "sleep brownie")):
-            return "dr_norms_brownie_sleep"
-        if any(x in n for x in ("brownie", "blondie", "pb cup", "peanut butter cup")):
-            return "dr_norms_brownie"
-        if any(x in n for x in ("nano", "cookies & cream", "cookies and cream", "cookies n cream")):
-            return "dr_norms_cookie_nano"
-        if any(x in n for x in ("rkt", "rice krispy", "rice krispie",
-                                  "krispie treat", "krispy treat", "matcha")):
-            return "dr_norms_rkt"
-        return "dr_norms_cookie"
+            family = "dr_norms_brownie_sleep"
+        elif any(x in n for x in ("brownie", "blondie", "pb cup", "peanut butter cup")):
+            family = "dr_norms_brownie"
+        elif any(x in n for x in ("nano", "cookies & cream", "cookies and cream", "cookies n cream")):
+            family = "dr_norms_cookie_nano"
+        elif any(x in n for x in ("rkt", "rice krispy", "rice krispie",
+                                    "krispie treat", "krispy treat", "matcha")):
+            family = "dr_norms_rkt"
+        else:
+            family = "dr_norms_cookie"
 
-    # Rosin — split by bpr_type
-    if "live rosin" in n and "vape" not in n and "aio" not in n:
-        if t == "wash":  return "rosin_wash"
-        if t == "press": return "rosin_press"
-        return "rosin_press"  # default for finished product batches
+    # Rosin AIO Vape (.5g Disp / 1g AIO) — multi-day decarb, NOT the
+    # generic "vapes" fill family. Must be checked BEFORE the general
+    # "live rosin" wash/press check below, since "rosin vape" also
+    # contains "rosin".
+    elif "rosin aio" in n or "rosin vape" in n:
+        family = "rosin_vape_decarb"
 
-    # Rosin downstream
-    if "rosin aio" in n or "rosin vape" in n:   return "rosin_aio"
-    if "rocket" in n:                            return "rosin_rocket"
+    # Live Rosin Concentrate (wash / press) — split by bpr_type.
+    # Excludes rosin vape/AIO, already handled above.
+    elif "live rosin" in n and "vape" not in n and "aio" not in n:
+        if t == "wash":
+            family = "rosin_wash"
+        else:
+            family = "rosin_press"  # covers "press" and default (finished-product batches)
+
+    elif "rocket" in n:
+        family = "rosin_rocket"
 
     # BHO
-    if "bho badder" in n or "bho shatter" in n: return "bho_badder"
+    elif "bho badder" in n or "bho shatter" in n:
+        family = "bho_badder"
 
     # Edibles
-    if "gummies" in n:                           return "gummies"
-    if "asteroids" in n:                         return "gummies"
-    if "malt balls" in n:                        return "punch_malt_balls"
-    if "punchbar" in n or "chocolate" in n:      return "punch_chocolate"
-    if "cookie delight" in n:                    return "punch_cookie_delight"
-    if "stinger" in n:                           return "punch_stinger"
+    elif "gummies" in n or "asteroids" in n:
+        family = "gummies"
+    elif "malt balls" in n:
+        family = "punch_malt_balls"
+    elif "punchbar" in n or "chocolate" in n:
+        # Sugar-Free and PB Combo must be checked BEFORE the generic
+        # "punchbar"/"chocolate" fallback — each has its own family
+        # with genuinely different CCPs (SF: 87°F hard stop / seeding
+        # method. PB Combo: dedicated allergen-critical equipment).
+        if any(x in n for x in ("sugar-free", "sugar free", " sf ", "-sf")) or n.endswith(" sf"):
+            family = "punch_chocolate_sf"
+        elif any(x in n for x in ("peanut butter", "pb combo", " pb ")) or n.endswith(" pb"):
+            family = "punch_chocolate_pb"
+        else:
+            family = "punch_chocolate"
+    elif "cookie delight" in n:
+        family = "punch_cookie_delight"
+    elif "stinger" in n:
+        family = "punch_stinger"
 
-    # Vapes
-    if "tempo" in n or "aio" in n or "distillate" in n or \
-       "510" in n or "vape" in n:               return "vapes"
+    # Vapes — 510, TEMPO AIO, Tempo Live Resin. Checked after the rosin
+    # vape/AIO branch above so "rosin aio" doesn't fall through to here.
+    elif "tempo" in n or "aio" in n or "distillate" in n or \
+         "510" in n or "vape" in n:
+        family = "vapes"
 
     # Category fallback
-    if c == "rosin_wash":                        return "rosin_wash"
-    if "concentrate" in c or "rosin" in c:       return "rosin_press"
-    if "vape" in c or "cartridge" in c:          return "vapes"
-    if "edible" in c:                            return "gummies"
+    elif c == "rosin_wash":
+        family = "rosin_wash"
+    elif "concentrate" in c or "rosin" in c:
+        family = "rosin_press"
+    elif "vape" in c or "cartridge" in c:
+        family = "vapes"
+    elif "edible" in c:
+        family = "gummies"
 
-    return None
+    # Safety net: never hand back a family key that BPR_PHASES doesn't
+    # actually define. All families this router can return are now
+    # built (as of this pass — if you add a new `elif ... family =
+    # "something_new"` branch above, make sure "something_new" is
+    # added to BPR_PHASES too, or it will silently fall back to None).
+    if family is not None and family not in BPR_PHASES:
+        return None
+
+    return family
