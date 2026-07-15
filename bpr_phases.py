@@ -3579,6 +3579,132 @@ BPR_PHASES = {
     ]
   },
 
+  # ─────────────────────────────────────────────────────────────────
+  # TEMPO DIAMONDS 1g (THCA Diamonds + HTE, Both 3rd-Party)
+  # Matches BPR-DIA-001 v2.0. This is a blend-and-portion process —
+  # weigh 4 components, blend, portion into CR glass jars — structurally
+  # closer to "bho_badder" than to "vapes". There is NO VapeJet fill,
+  # NO cartridge/hardware, and NO on-site crystallization here. Do not
+  # route this to "vapes" just because the name contains "Tempo" — and
+  # do not confuse it with Tempo Live Resin Vape (a VapeJet fill
+  # product that also has dual 3rd-party receiving verification but is
+  # otherwise a completely different downstream process).
+  # ─────────────────────────────────────────────────────────────────
+  "tempo_diamonds": {
+    "label": "Tempo Diamonds 1g (THCA + HTE, 3rd Party)",
+    "sop_ref": "MMP-DIA-001 v1.0 / PQP-DIA-001 v1.0",
+    "uom": "units",
+    "phases": [
+      {
+        "id": "receiving_verification",
+        "name": "Receiving Verification (Mandatory Before Processing)",
+        "steps": [
+          "RECEIVING VERIFICATION: COA for THCA Diamonds AND HTE both in hand — both METRC transfers accepted",
+          "Confirm products sealed and intact — no hairs, debris, or visible contamination",
+          "Supervisor sign-off — mandatory before any processing begins",
+        ],
+        "ccps": [0, 1],
+        "ccp_labels": {
+          0: "Both COAs in hand, both METRC transfers accepted (pass/fail)",
+          1: "Contamination inspection — no hairs/debris/visible contamination (pass/fail)",
+        },
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          0: "Either COA or transfer missing: halt, do not begin processing — both 3rd-party inputs are mandatory before any blend step.",
+          1: "Any contamination found: reject material, do not process, notify QA.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "pre_production_prep",
+        "name": "Pre-Production Setup",
+        "steps": [
+          "ISO-wipe all tools, tables, jars, and caps — air dry",
+          "Calibrate scale — verify reads 0.0g with parchment",
+        ],
+        "ccps": [],
+        "ccp_labels": {},
+        "ccp_specs": {},
+        "corrective_actions": {},
+        "notes_required": False,
+      },
+      {
+        "id": "component_blend",
+        "name": "Component Weigh & Blend",
+        "steps": [
+          "Weigh all 4 components: THCA Diamonds, HTE, Liquidizer, Terpenes",
+          "Record ALL weights on BPR",
+          "Combine components in a clean beaker",
+          "Mix until uniform — no dry Diamonds visible, no separation",
+        ],
+        "ccps": [1, 3],
+        "ccp_labels": {
+          1: "All 4 component weights recorded (g)",
+          3: "Blend uniformity — no dry Diamonds visible, no separation (pass/fail)",
+        },
+        "ccp_specs": {1: {"unit": "g", "min": 0.1, "max": 99999}, 3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          1: "Record actual — any variance from formula noted on BPR.",
+          3: "Dry Diamonds or separation visible: continue mixing, do not proceed to portioning.",
+        },
+        "notes_required": False,
+      },
+      {
+        "id": "portioning",
+        "name": "Portioning",
+        "steps": [
+          "Portion 1.0–1.05g blend per CR glass jar using clean tools",
+          "Weigh each jar on certified scale",
+          "Change gloves/tools when sticky — cross-contamination risk",
+        ],
+        "ccps": [1],
+        "ccp_labels": {1: "Fill weight per jar (g) — must be 1.0–1.05g"},
+        "ccp_specs": {1: {"unit": "g", "min": 1.0, "max": 1.05}},
+        "corrective_actions": {1: "Outside range: remove excess or top up before capping. Do not seal an out-of-spec jar without correction."},
+        "notes_required": False,
+      },
+      {
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
+        "steps": [
+          "Apply CR cap. Apply strain top sticker to cap. Apply wrap sticker to jar exterior.",
+          "Place in Tempo Diamonds product box",
+          "Apply required info sticker (back of box) — verify all 5 fields: product name, batch#, METRC UID, mfg date, THC%",
+          "Confirm label compliant — no prohibited imagery per §17408",
+          "10CT case packaging — count and record",
+        ],
+        "ccps": [2, 3],
+        "ccp_labels": {
+          2: "Label verification — all 5 fields present, supervisor approved (pass/fail)",
+          3: "Label §17408 compliance — no prohibited imagery (pass/fail)",
+        },
+        "ccp_specs": {2: {"unit": "boolean", "min": 1, "max": 1}, 3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          2: "Any field missing/illegible: halt labeling, correct before proceeding.",
+          3: "Prohibited imagery present: halt run, correct label before continuing.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
+        "id": "sanitation",
+        "name": "Post-Run Sanitation",
+        "steps": [
+          "Post-production clean-down",
+          "UV light on overnight after ISO clean",
+          "Complete cleaning log entry — date, equipment, method, initials",
+          "METRC manufacturing activity entry within 24 hours",
+        ],
+        "ccps": [3],
+        "ccp_labels": {3: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {3: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {3: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
+        "notes_required": False,
+      },
+    ]
+  },
+
 }
 
 DR_NORMS_PREFIXES = ("dr. norm", "dr norm", "dr.norm", "norms", "doctor norm")
@@ -3663,8 +3789,17 @@ def detect_product_family(item_name: str, category: str = "",
     elif "stinger" in n:
         family = "punch_stinger"
 
+    # Tempo Diamonds — must be checked BEFORE the generic "tempo" →
+    # vapes catch-all below, since "tempo diamonds" contains "tempo"
+    # and would otherwise be silently mis-routed to a VapeJet-fill
+    # family when it's actually a blend-and-portion product with no
+    # vape hardware at all.
+    elif "diamond" in n:
+        family = "tempo_diamonds"
+
     # Vapes — 510, TEMPO AIO, Tempo Live Resin. Checked after the rosin
-    # vape/AIO branch above so "rosin aio" doesn't fall through to here.
+    # vape/AIO branch and the Tempo Diamonds branch above, so neither
+    # falls through to here.
     elif "tempo" in n or "aio" in n or "distillate" in n or \
          "510" in n or "vape" in n:
         family = "vapes"
@@ -3681,9 +3816,12 @@ def detect_product_family(item_name: str, category: str = "",
 
     # Safety net: never hand back a family key that BPR_PHASES doesn't
     # actually define. All families this router can return are now
-    # built (as of this pass — if you add a new `elif ... family =
-    # "something_new"` branch above, make sure "something_new" is
-    # added to BPR_PHASES too, or it will silently fall back to None).
+    # built. LiquiDabs is the one remaining product with no dedicated
+    # branch above — it falls through to the category fallback below,
+    # or None if category is also unset. If you add a new
+    # `elif ... family = "something_new"` branch above, make sure
+    # "something_new" is added to BPR_PHASES too, or it will silently
+    # fall back to None.
     if family is not None and family not in BPR_PHASES:
         return None
 
