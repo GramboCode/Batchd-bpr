@@ -17,6 +17,7 @@ export default function PhaseCard({
   const [signing, setSigning]             = useState(false);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [nameInput, setNameInput]         = useState("");
+  const [isEditing, setIsEditing]         = useState(false);  
 
   // Build local check state from stepChecks prop
   useEffect(() => {
@@ -27,6 +28,19 @@ export default function PhaseCard({
     });
     setLocalChecks(local);
   }, [stepChecks, phase.id]);
+
+  // Pre-fill CCP values + notes from the existing signoff when entering edit mode
+  useEffect(() => {
+    if (isEditing && signoff) {
+      const prefillCcp = {};
+      (phase.ccps || []).forEach(i => {
+        const v = signoff.ccp_values?.[i] ?? signoff.ccp_values?.[String(i)];
+        if (v !== undefined) prefillCcp[i] = v;
+      });
+      setCcpValues(prefillCcp);
+      setNotes(signoff.notes || "");
+    }
+  }, [isEditing]); 
 
   // ── Name management ──────────────────────────────────────────────────
   function saveName() {
@@ -75,12 +89,14 @@ export default function PhaseCard({
     setSigning(true);
     try {
       await onSignOff(employeeName, notes, ccpValues);
+      setIsEditing(false);   // NEW — return to read-only signed view after a successful update
     } finally {
       setSigning(false);
     }
   }
 
   const ccpSet = new Set(phase.ccps || []);
+  const effectivelySigned = isSigned && !isEditing;  
 
   return (
     <div className={`phase-card ${isActive ? "phase-active" : ""} ${isSigned ? "phase-signed" : ""}`}>
@@ -93,7 +109,7 @@ export default function PhaseCard({
           </div>
           <div className="phase-header-info">
             <div className="phase-title">{phase.name}</div>
-            {isSigned ? (
+            {effectivelySigned ? (
               <div className="phase-signed-by">
                 Signed off by <strong>{signoff?.employee_name}</strong>
                 {" · "}
@@ -103,6 +119,13 @@ export default function PhaseCard({
                       hour: "numeric", minute: "2-digit"
                     })
                   : ""}
+                <button
+                  className="btn-text-sm"
+                  style={{ marginLeft: 8 }}
+                  onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+                >
+                  Edit
+                </button>
               </div>
             ) : (
               <div className="phase-progress-row">
@@ -115,7 +138,7 @@ export default function PhaseCard({
           </div>
         </div>
         <div className="phase-header-right">
-          {!isSigned && (
+          {!effectivelySigned && (
             <span className={`phase-status-chip ${pct === 100 ? "chip-ready" : "chip-progress"}`}>
               {pct === 100 ? "Ready to sign" : `${pct}%`}
             </span>
@@ -186,7 +209,7 @@ export default function PhaseCard({
                   <button
                     className={`step-checkbox ${checked ? "cb-checked" : ""}`}
                     onClick={() => handleCheck(i)}
-                    disabled={isSigned || !nameSet}
+                    disabled={effectivelySigned || !nameSet}
                     aria-label={`${checked ? "Uncheck" : "Check"} step ${i + 1}`}
                   >
                     {checked && "✓"}
@@ -207,7 +230,7 @@ export default function PhaseCard({
                       </div>
                     )}
                     {/* CCP measurement input */}
-                    {isCCP && !isSigned && (
+                    {isCCP && !effectivelySigned && (
                       <div className="ccp-input-row">
                         <label className="ccp-input-label">{ccpLabel || "Measurement"}</label>
                         <input
@@ -220,7 +243,7 @@ export default function PhaseCard({
                       </div>
                     )}
                     {/* Show recorded CCP value if signed */}
-                    {isCCP && isSigned && signoff?.ccp_values && (
+                    {isCCP && effectivelySigned && signoff?.ccp_values && (
                       <div className="ccp-recorded">
                         <span className="ccp-recorded-label">{ccpLabel}:</span>
                         <span className="ccp-recorded-value">
@@ -235,7 +258,7 @@ export default function PhaseCard({
           </div>
 
           {/* Notes field */}
-          {!isSigned && (
+          {!effectivelySigned && (
             <div className="notes-section">
               <label className="notes-label">
                 Notes {phase.notes_required && <span className="required-star">*</span>}
@@ -262,7 +285,7 @@ export default function PhaseCard({
           )}
 
           {/* Signed notes display */}
-          {isSigned && signoff?.notes && (
+          {effectivelySigned && signoff?.notes && (
             <div className="signed-notes">
               <div className="signed-notes-label">Notes</div>
               <div className="signed-notes-text">{signoff.notes}</div>
@@ -270,7 +293,7 @@ export default function PhaseCard({
           )}
 
           {/* Sign-off button */}
-          {!isSigned && (
+          {!effectivelySigned && (
             <div className="signoff-section">
               {!allChecked && (
                 <div className="signoff-hint">
@@ -294,9 +317,9 @@ export default function PhaseCard({
                 onClick={handleSignOff}
               >
                 {signing
-                  ? "Signing off..."
+                  ? (isEditing ? "Updating..." : "Signing off...")
                   : canSignOff
-                  ? `Sign Off — ${phase.name}`
+                  ? (isEditing ? `Update Sign-off — ${phase.name}` : `Sign Off — ${phase.name}`)
                   : "Complete all steps to sign off"}
               </button>
             </div>

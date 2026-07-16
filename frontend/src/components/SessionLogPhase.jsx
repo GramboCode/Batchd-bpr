@@ -320,6 +320,8 @@ export default function SessionLogPhase({
                     key={s.id}
                     session={s}
                     kind={config.kind}
+                    hashLotId={hashLotId}
+                    operatorName={employeeName}
                     onClose={handleCloseSession}
                     isSigned={isSigned}
                   />
@@ -379,9 +381,17 @@ export default function SessionLogPhase({
 }
 
 // ── Individual session card ───────────────────────────────────────────
-function SessionCard({ session, kind, onClose, isSigned }) {
+// ── Individual session card ───────────────────────────────────────────
+function SessionCard({ session, kind, hashLotId, operatorName, onClose, isSigned }) {
   const [closing, setClosing] = useState(false);
   const [closeVal, setCloseVal] = useState("");
+  const [correcting, setCorrecting] = useState(false);   // NEW — toggles the re-open/correct form on a closed session
+
+  const [trays, setTrays] = useState([]);
+  const [trayLabel, setTrayLabel] = useState("");
+  const [trayWeight, setTrayWeight] = useState("");
+  const [addingTray, setAddingTray] = useState(false);
+  const [loadingTrays, setLoadingTrays] = useState(false);
 
   const isOpen = !session.completed_at;
 
@@ -397,11 +407,81 @@ function SessionCard({ session, kind, onClose, isSigned }) {
     sift: "sift_weight_out_g",
   }[kind];
 
-  async function submitClose() {
+  // ── Tray weigh-ins — only relevant while a session is open ──────────
+  useEffect(() => {
+    if (isOpen) loadTrays();
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadTrays() {
+    setLoadingTrays(true);
+    try {
+      const res = await fetch(`${API_BASE}/hash/${kind}-session/${session.id}/trays`);
+      const data = await res.json();
+      setTrays(data.trays || []);
+    } catch (e) {
+      console.error("loadTrays failed", e);
+    } finally {
+      setLoadingTrays(false);
+    }
+  }
+
+  const trayTotal = trays.reduce((sum, t) => sum + (parseFloat(t.weight_g) || 0), 0);
+
+  async function addTray() {
+    if (!trayWeight.trim()) return;
+    setAddingTray(true);
+    try {
+      const res = await fetch(`${API_BASE}/hash/${hashLotId}/${kind}-session/${session.id}/tray`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tray_label: trayLabel.trim() || null,
+          weight_g: parseFloat(trayWeight),
+          recorded_by: operatorName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail?.message || data.detail || "Failed to add tray");
+      setTrays(prev => [...prev, data.tray]);
+      setTrayLabel("");
+      setTrayWeight("");
+      // Keep the close-session field in sync with the new running total,
+      // but only if the operator hasn't already typed their own override.
+      if (!closeVal || parseFloat(closeVal) === trayTotal) {
+        setCloseVal(String(data.running_total_g));
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setAddingTray(false);
+    }
+  }
+
+  async function removeTray(trayId) {
+    try {
+      const res = await fetch(`${API_BASE}/hash/tray/${trayId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to remove tray");
+      setTrays(prev => prev.filter(t => t.id !== trayId));
+      if (closeVal && parseFloat(closeVal) === trayTotal) {
+        setCloseVal(String(data.running_total_g));
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  // ── Close / correct ──────────────────────────────────────────────────
+  async function submitClose(isCorrection) {
     if (!closeVal.trim()) return;
     setClosing(true);
-    await onClose(session.id, { [closeFieldKey]: parseFloat(closeVal) });
+    const payload = { [closeFieldKey]: parseFloat(closeVal) };
+    if (isCorrection) {
+      payload.corrected_by = operatorName;   // backend only stamps corrected_at when this is present AND session was already closed
+    }
+    await onClose(session.id, payload);
     setClosing(false);
+    setCorrecting(false);
   }
 
   return (
@@ -419,7 +499,48 @@ function SessionCard({ session, kind, onClose, isSigned }) {
           {kind === "freezedry" && `${session.input_wet_weight_g}g in${session.output_dry_weight_g ? ` → ${session.output_dry_weight_g}g dry` : ""}`}
           {kind === "sift" && `${session.dry_weight_in_g}g in${session.sift_weight_out_g ? ` → ${session.sift_weight_out_g}g sift` : ""}`}
           {session.started_at && ` · started ${new Date(session.started_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
+          {session.corrected_at && (
+            <> · <span style={{ color: "var(--amber, #B45309)" }}>
+              corrected by {session.corrected_by} {new Date(session.corrected_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+            </span></>
+          )}
         </div>
+
+        {/* ── Tray weigh-ins — only while session is open ────────────── */}
+        {isOpen && !isSigned && (
+          <div style={{ marginTop: 8, padding: 10, background: "var(--bg3, #F0F2F7)", borderRadius: 6 }}>
+            <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Trays / Pulls ({trays.length}) — running total {trayTotal.toLocaleString()}g
+            </div>
+
+            {loadingTrays ? (
+              <div style={{ fontSize: "0.82rem", color: "var(--text3)" }}>Loading trays...</div>
+            ) : (
+              trays.map(t => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", fontSize: "0.85rem" }}>
+                  <span>{t.tray_label ? `${t.tray_label} — ` : ""}{t.weight_g}g</span>
+                  <button className="btn-text-sm" onClick={() => removeTray(t.id)}>Remove</button>
+                </div>
+              ))
+            )}
+
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <input
+                className="ccp-input" type="text" placeholder="Tray label (optional)"
+                style={{ flex: 1 }}
+                value={trayLabel} onChange={e => setTrayLabel(e.target.value)}
+              />
+              <input
+                className="ccp-input" type="number" placeholder="Weight (g)"
+                style={{ width: 110 }}
+                value={trayWeight} onChange={e => setTrayWeight(e.target.value)}
+              />
+              <button className="btn btn-ghost-sm" disabled={addingTray || !trayWeight.trim()} onClick={addTray}>
+                {addingTray ? "..." : "+ Tray"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {isOpen && !isSigned && (
           <div className="ccp-input-row">
@@ -428,15 +549,43 @@ function SessionCard({ session, kind, onClose, isSigned }) {
               className="ccp-input" type="number" placeholder="Enter weight..."
               value={closeVal} onChange={e => setCloseVal(e.target.value)}
             />
-            <button className="btn btn-primary-sm" style={{ marginTop: 6 }} disabled={closing || !closeVal.trim()} onClick={submitClose}>
+            {trays.length > 0 && (
+              <div style={{ fontSize: "0.75rem", color: "var(--text3)", marginTop: 4 }}>
+                Pre-filled from {trays.length} tray{trays.length !== 1 ? "s" : ""} above — adjust if needed
+              </div>
+            )}
+            <button className="btn btn-primary-sm" style={{ marginTop: 6 }} disabled={closing || !closeVal.trim()} onClick={() => submitClose(false)}>
               {closing ? "Closing..." : "Close Session"}
             </button>
+          </div>
+        )}
+
+        {/* ── Correction path — session already closed ───────────────── */}
+        {!isOpen && !isSigned && !correcting && (
+          <button className="btn-text-sm" style={{ marginTop: 6 }} onClick={() => { setCloseVal(String(session[closeFieldKey] ?? "")); setCorrecting(true); }}>
+            Edit weight
+          </button>
+        )}
+        {!isOpen && !isSigned && correcting && (
+          <div className="ccp-input-row">
+            <label className="ccp-input-label">Correct {fieldLabel.toLowerCase()}</label>
+            <input
+              className="ccp-input" type="number"
+              value={closeVal} onChange={e => setCloseVal(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <button className="btn btn-ghost-sm" onClick={() => setCorrecting(false)}>Cancel</button>
+              <button className="btn btn-primary-sm" disabled={closing || !closeVal.trim()} onClick={() => submitClose(true)}>
+                {closing ? "Saving..." : "Save Correction"}
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+
 
 // ── Add session form — shape differs by kind ──────────────────────────
 function AddSessionForm({ kind, upstream, upstreamLabel, prefill = {}, onSubmit, onCancel, submitting }) {

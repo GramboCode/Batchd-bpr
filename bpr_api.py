@@ -308,6 +308,29 @@ CREATE TABLE IF NOT EXISTS hash_lot_sift_sessions (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Correction audit trail — stays NULL on a normal first close; only
+-- populated when a session that was ALREADY closed gets its weight
+-- corrected. Lets the sheet/PDF distinguish "recorded once" from
+-- "recorded, then someone fixed a mistake."
+ALTER TABLE hash_lot_wash_sessions      ADD COLUMN IF NOT EXISTS corrected_by TEXT, ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ;
+ALTER TABLE hash_lot_freezedry_sessions ADD COLUMN IF NOT EXISTS corrected_by TEXT, ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ;
+ALTER TABLE hash_lot_sift_sessions      ADD COLUMN IF NOT EXISTS corrected_by TEXT, ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ;
+
+-- Tray/pull weigh-ins logged DURING an open session, before it closes.
+-- One shared table for all three stages — same shape, different session table.
+CREATE TABLE IF NOT EXISTS hash_lot_tray_weighins (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hash_lot_id  TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
+    stage        TEXT NOT NULL CHECK (stage IN ('wash','freezedry','sift')),
+    session_id   UUID NOT NULL,
+    tray_label   TEXT,
+    weight_g     NUMERIC NOT NULL,
+    recorded_by  TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tray_weighins_session ON hash_lot_tray_weighins(session_id);
+
+
 CREATE TABLE IF NOT EXISTS hash_lot_wash_to_freezedry_allocations (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wash_session_id       UUID NOT NULL REFERENCES hash_lot_wash_sessions(id),
@@ -381,8 +404,9 @@ class WashSessionCreate(BaseModel):
     notes: Optional[str] = None
 
 class WashSessionClose(BaseModel):
-    wet_weight_g: Optional[float] = None  # allow correction at close if needed
+    wet_weight_g: Optional[float] = None
     notes: Optional[str] = None
+    corrected_by: Optional[str] = None 
 
 class FreezeDrySessionCreate(BaseModel):
     operator_name: str
@@ -395,6 +419,7 @@ class FreezeDrySessionCreate(BaseModel):
 class FreezeDrySessionClose(BaseModel):
     output_dry_weight_g: float
     notes: Optional[str] = None
+    corrected_by: Optional[str] = None 
 
 class SiftSessionCreate(BaseModel):
     operator_name: str
@@ -405,6 +430,7 @@ class SiftSessionCreate(BaseModel):
 class SiftSessionClose(BaseModel):
     sift_weight_out_g: float
     notes: Optional[str] = None
+    corrected_by: Optional[str] = None 
 
 # ── Pydantic models (component lots — generic) ────────────────────────────
 
@@ -414,19 +440,20 @@ class LotInputMaterial(BaseModel):
     input_weight_g: Optional[float] = None
 
 class ComponentLotCreate(BaseModel):
-    component_type: str                      # must exist in bpr_component_types
+    component_type: str
     strain: Optional[str] = None
-    is_mixed: bool = False                   # affects lot code generation
+    is_mixed: bool = False
     description: Optional[str] = None
-    initial_qty: Optional[float] = None      # for received lots: opening balance
-    metrc_uid: Optional[str] = None          # for received lots: package tag
+    initial_qty: Optional[float] = None
+    metrc_uid: Optional[str] = None
     supplier: Optional[str] = None
     manifest_number: Optional[str] = None
     coa_ref: Optional[str] = None
     storage_location: Optional[str] = None
     created_by: Optional[str] = None
-    type_data: Optional[dict] = None         # type-specific extras (wet_weight_g, etc.)
-    inputs: List[LotInputMaterial] = []      # source materials feeding this lot
+    type_data: Optional[dict] = None
+    inputs: List[LotInputMaterial] = []
+    lot_code_override: Optional[str] = None     # source materials feeding this lot
 
 class ComponentStatusUpdate(BaseModel):
     status: str
@@ -448,6 +475,7 @@ class HashLotCreateRequest(BaseModel):
     is_mixed: bool = False
     wet_weight_g: Optional[float] = None
     inputs: List[LotInputMaterial]
+    lot_code_override: Optional[str] = None   # NEW
 
 class HashLotWeightsRequest(BaseModel):
     dry_weight_g: Optional[float] = None
@@ -479,7 +507,15 @@ class SanitationEntry(BaseModel):
 class SanitationLogRequest(BaseModel):
     entries: List[SanitationEntry]
 
+class TrayWeighInCreate(BaseModel):
+    tray_label: Optional[str] = None
+    weight_g: float
+    recorded_by: Optional[str] = None
 
+class TrayWeighInCreate(BaseModel):
+    tray_label: Optional[str] = None
+    weight_g: float
+    recorded_by: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -631,7 +667,13 @@ def create_component_lot_internal(conn, req: ComponentLotCreate) -> dict:
         # Retry once on lot-code collision (see generate_lot_code note)
         lot = None
         for attempt in range(2):
-            lot_code = generate_lot_code(cur, type_row, req.strain, req.is_mixed)
+            # Honor an operator-provided override on the first attempt only —
+            # if it collides, fall back to auto-generation rather than looping
+            # forever on the same rejected string.
+            if req.lot_code_override and attempt == 0:
+                lot_code = req.lot_code_override.strip().upper()
+            else:
+                lot_code = generate_lot_code(cur, type_row, req.strain, req.is_mixed)
             try:
                 cur.execute("""
                     INSERT INTO bpr_component_lots
@@ -838,6 +880,7 @@ def create_hash_lot(req: HashLotCreateRequest):
             component_type="ice_water_hash",
             strain=req.primary_strain,
             is_mixed=req.is_mixed,
+            lot_code_override=req.lot_code_override,   # NEW — thread it through
             type_data={
                 "is_mixed": req.is_mixed,
                 "wet_weight_g": req.wet_weight_g,
@@ -2387,26 +2430,40 @@ def list_wash_sessions(hash_lot_id: str):
 
 @app.patch("/hash/wash-session/{session_id}")
 async def close_wash_session(session_id: str, req: WashSessionClose):
-    # async so the Session Log push can fire as a background task —
-    # create_task needs a running event loop (the phase_signoff lesson)
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE hash_lot_wash_sessions SET
-                    completed_at = NOW(),
-                    wet_weight_g = COALESCE(%s, wet_weight_g),
-                    notes = COALESCE(%s, notes)
-                WHERE id = %s
-                RETURNING *
-            """, (req.wet_weight_g, req.notes, session_id))
-            updated = cur.fetchone()
-            if not updated:
+            # Was this session already closed BEFORE this call? That's what
+            # tells us "correction" vs. "first close" — checked before the
+            # UPDATE overwrites completed_at.
+            cur.execute("SELECT completed_at FROM hash_lot_wash_sessions WHERE id = %s", (session_id,))
+            existing = cur.fetchone()
+            if not existing:
                 raise HTTPException(404, "Wash session not found")
-            updated = dict(updated)
+            is_correction = existing["completed_at"] is not None
+
+            if is_correction and req.corrected_by:
+                cur.execute("""
+                    UPDATE hash_lot_wash_sessions SET
+                        wet_weight_g = COALESCE(%s, wet_weight_g),
+                        notes = COALESCE(%s, notes),
+                        corrected_by = %s,
+                        corrected_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.wet_weight_g, req.notes, req.corrected_by, session_id))
+            else:
+                cur.execute("""
+                    UPDATE hash_lot_wash_sessions SET
+                        completed_at = NOW(),
+                        wet_weight_g = COALESCE(%s, wet_weight_g),
+                        notes = COALESCE(%s, notes)
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.wet_weight_g, req.notes, session_id))
+            updated = dict(cur.fetchone())
         conn.commit()
 
-        # Mirror the closed session into the BPR sheet's Session Log tab
         import asyncio
         asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "wash", {
             "session_num":  updated["session_num"],
@@ -2421,7 +2478,7 @@ async def close_wash_session(session_id: str, req: WashSessionClose):
             "notes":        updated["notes"] or "",
         }))
 
-        return {"session": updated, "message": "Wash session closed"}
+        return {"session": updated, "message": "Wash session corrected" if is_correction else "Wash session closed"}
     finally:
         conn.close()
 
@@ -2561,20 +2618,33 @@ async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE hash_lot_freezedry_sessions SET
-                    completed_at = NOW(),
-                    output_dry_weight_g = %s,
-                    notes = COALESCE(%s, notes)
-                WHERE id = %s
-                RETURNING *
-            """, (req.output_dry_weight_g, req.notes, session_id))
-            updated = cur.fetchone()
-            if not updated:
+            cur.execute("SELECT completed_at FROM hash_lot_freezedry_sessions WHERE id = %s", (session_id,))
+            existing = cur.fetchone()
+            if not existing:
                 raise HTTPException(404, "Freeze-dry session not found")
-            updated = dict(updated)
+            is_correction = existing["completed_at"] is not None
 
-            # "S1: 4,000g; S2: 3,500g" — which wash sessions fed this dryer load
+            if is_correction and req.corrected_by:
+                cur.execute("""
+                    UPDATE hash_lot_freezedry_sessions SET
+                        output_dry_weight_g = %s,
+                        notes = COALESCE(%s, notes),
+                        corrected_by = %s,
+                        corrected_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.output_dry_weight_g, req.notes, req.corrected_by, session_id))
+            else:
+                cur.execute("""
+                    UPDATE hash_lot_freezedry_sessions SET
+                        completed_at = NOW(),
+                        output_dry_weight_g = %s,
+                        notes = COALESCE(%s, notes)
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.output_dry_weight_g, req.notes, session_id))
+            updated = dict(cur.fetchone())
+
             cur.execute("""
                 SELECT ws.session_num, a.weight_allocated_g
                 FROM hash_lot_wash_to_freezedry_allocations a
@@ -2602,7 +2672,7 @@ async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
             "notes":        updated["notes"] or "",
         }))
 
-        return {"session": updated, "message": "Freeze-dry session closed"}
+        return {"session": updated, "message": "Freeze-dry session corrected" if is_correction else "Freeze-dry session closed"}
     finally:
         conn.close()
 
@@ -2743,20 +2813,33 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE hash_lot_sift_sessions SET
-                    completed_at = NOW(),
-                    sift_weight_out_g = %s,
-                    notes = COALESCE(%s, notes)
-                WHERE id = %s
-                RETURNING *
-            """, (req.sift_weight_out_g, req.notes, session_id))
-            updated = cur.fetchone()
-            if not updated:
+            cur.execute("SELECT completed_at FROM hash_lot_sift_sessions WHERE id = %s", (session_id,))
+            existing = cur.fetchone()
+            if not existing:
                 raise HTTPException(404, "Sift session not found")
-            updated = dict(updated)
+            is_correction = existing["completed_at"] is not None
 
-            # Which freeze-dry loads fed this sift
+            if is_correction and req.corrected_by:
+                cur.execute("""
+                    UPDATE hash_lot_sift_sessions SET
+                        sift_weight_out_g = %s,
+                        notes = COALESCE(%s, notes),
+                        corrected_by = %s,
+                        corrected_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.sift_weight_out_g, req.notes, req.corrected_by, session_id))
+            else:
+                cur.execute("""
+                    UPDATE hash_lot_sift_sessions SET
+                        completed_at = NOW(),
+                        sift_weight_out_g = %s,
+                        notes = COALESCE(%s, notes)
+                    WHERE id = %s
+                    RETURNING *
+                """, (req.sift_weight_out_g, req.notes, session_id))
+            updated = dict(cur.fetchone())
+
             cur.execute("""
                 SELECT fd.session_num, a.weight_allocated_g
                 FROM hash_lot_freezedry_to_sift_allocations a
@@ -2769,12 +2852,13 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
                 for r in cur.fetchall()
             )
 
-            # ── LEDGER: inventory is born as sift sessions close ──────────
-            # Target = total sift output across ALL closed sessions for this
-            # lot; we insert the DELTA vs. what the ledger already shows as
-            # produced. Closing session 2 adds only session 2's grams, and
-            # RE-closing a session to correct a weight adjusts rather than
-            # double-counts — same convergence rule as everywhere else.
+            # ── LEDGER: runs on EVERY close, correction or not — a
+            # corrected sift weight is a real inventory change and must
+            # flow through. The delta-vs-already-produced math (unchanged
+            # from before) means this naturally handles corrections too:
+            # closing session 2 the first time adds session 2's grams;
+            # re-closing it with a different number adds/subtracts just
+            # the difference, never double-counts.
             lot = get_lot(cur, updated["hash_lot_id"])
             cur.execute("""
                 SELECT COALESCE(SUM(sift_weight_out_g), 0) AS total_out
@@ -2793,8 +2877,9 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
                 add_transaction(cur, lot, "production", delta,
                                 reference_type="sift_session",
                                 reference_id=str(session_id),
-                                note=f"Sift session {updated['session_num']} closed",
-                                performed_by=updated["operator_name"])
+                                note=f"Sift session {updated['session_num']} "
+                                     + ("corrected" if is_correction else "closed"),
+                                performed_by=req.corrected_by or updated["operator_name"])
         conn.commit()
 
         import asyncio
@@ -2809,7 +2894,70 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
             "notes":        updated["notes"] or "",
         }))
 
-        return {"session": updated, "message": "Sift session closed"}
+        return {"session": updated, "message": "Sift session corrected" if is_correction else "Sift session closed"}
+    finally:
+        conn.close()
+
+# ── TRAY WEIGH-INS — logged during an open session, before it closes ──
+
+@app.post("/hash/{hash_lot_id}/{stage}-session/{session_id}/tray")
+def add_tray_weighin(hash_lot_id: str, stage: str, session_id: str, req: TrayWeighInCreate):
+    if stage not in ("wash", "freezedry", "sift"):
+        raise HTTPException(400, "stage must be wash, freezedry, or sift")
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO hash_lot_tray_weighins
+                    (hash_lot_id, stage, session_id, tray_label, weight_g, recorded_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (hash_lot_id, stage, session_id, req.tray_label, req.weight_g, req.recorded_by))
+            tray = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT COALESCE(SUM(weight_g), 0) AS total, COUNT(*) AS n
+                FROM hash_lot_tray_weighins WHERE session_id = %s
+            """, (session_id,))
+            totals = cur.fetchone()
+        conn.commit()
+        return {"tray": tray, "running_total_g": float(totals["total"]), "tray_count": totals["n"]}
+    finally:
+        conn.close()
+
+
+@app.get("/hash/{stage}-session/{session_id}/trays")
+def list_tray_weighins(stage: str, session_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM hash_lot_tray_weighins
+                WHERE session_id = %s ORDER BY created_at
+            """, (session_id,))
+            trays = [dict(r) for r in cur.fetchall()]
+            total = sum(float(t["weight_g"]) for t in trays)
+        return {"trays": trays, "running_total_g": total, "tray_count": len(trays)}
+    finally:
+        conn.close()
+
+
+@app.delete("/hash/tray/{tray_id}")
+def delete_tray_weighin(tray_id: str):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM hash_lot_tray_weighins WHERE id = %s RETURNING session_id", (tray_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Tray entry not found")
+            cur.execute("""
+                SELECT COALESCE(SUM(weight_g), 0) AS total FROM hash_lot_tray_weighins
+                WHERE session_id = %s
+            """, (row["session_id"],))
+            total = cur.fetchone()["total"]
+        conn.commit()
+        return {"deleted": True, "running_total_g": float(total)}
     finally:
         conn.close()
 
