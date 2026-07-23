@@ -1554,7 +1554,7 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
 # GET /bpr/{uid}/status
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}/status")
-def get_bpr_status(uid: str, lot_code: Optional[str] = Query(None)):
+def get_bpr_status(uid: str, metrc_uid: Optional[str] = Query(None)):
     """
     `uid` may be either identifier. Printed QR codes on compliance sheets
     carry the lot code and will keep arriving here forever, so resolution
