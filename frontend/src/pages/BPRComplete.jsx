@@ -61,12 +61,29 @@ export default function BPRComplete({ bprData, params }) {
               fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
             }}>📄 View BPR PDF in Drive</a>
           )}
-          <a href="javascript:history.back()" style={{
-            display: "block", padding: "11px", borderRadius: 8, textAlign: "center",
-            border: "1.5px solid #E2E6EF", color: "#4A5068", textDecoration: "none",
-            fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.9rem",
-            fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
-          }}>← Return to BatchD</a>
+          <button
+            onClick={() => {
+              // This page is always opened as a new tab via window.open() from
+              // the Punch Tools batch detail button, so there's no history to
+              // go "back" to in this tab — that's why history.back() did
+              // nothing. Closing the tab returns focus to the batch detail
+              // page that's still open behind it.
+              window.close();
+              // Fallback for the rare case a browser blocks script-initiated
+              // close (some do, if it doesn't believe the tab was opened by
+              // a script) — send them somewhere sane instead of a dead button.
+              setTimeout(() => {
+                window.location.href = "https://batchd-bpr.netlify.app";
+              }, 300);
+            }}
+            style={{
+              display: "block", width: "100%", padding: "11px", borderRadius: 8,
+              textAlign: "center", border: "1.5px solid #E2E6EF", background: "#fff",
+              color: "#4A5068", cursor: "pointer",
+              fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.9rem",
+              fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
+            }}
+          >← Return to BatchD</button>
         </div>
 
         <div style={{
