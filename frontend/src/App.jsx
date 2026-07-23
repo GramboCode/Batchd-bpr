@@ -24,6 +24,7 @@ function getParams() {
     mfgDate:     p.get("mfgDate")     || p.get("mfg_date")    || "",
     category:    p.get("category")    || "",
     bprType:     p.get("bprType")     || p.get("bpr_type")    || "",
+    lotCode:     p.get("lotCode")     || p.get("lot_code")    || "",
     returnUrl:   p.get("returnUrl")   || "",
   };
 }
@@ -79,11 +80,9 @@ function BPRFlow() {
       }
 
       if (statusData.exists) {
-        const fullRes = await fetch(`${API_BASE}/bpr/${params.uid}`);
-        if (!fullRes.ok) throw new Error("Failed to load existing BPR");
-        const fullData = await fullRes.json();
+        const fullData = await loadFull(statusData.uid);   // ← was params.uid
         setBprData(fullData);
-        setView("form");
+        setView(statusData.status === "completed" ? "complete" : "form");
         return;
       }
 

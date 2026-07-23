@@ -37,7 +37,7 @@ TODO (dedicated security session): add API-key auth on all write routes,
 tighten CORS to the Netlify origin, add rate limiting.
 """
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 import psycopg2
@@ -375,6 +375,7 @@ class BPRCreateRequest(BaseModel):
     mfg_date: Optional[str] = None
     category: Optional[str] = None
     bpr_type: Optional[str] = None
+    lot_code: Optional[str] = None 
 
 class StepCheckRequest(BaseModel):
     phase_id: str
@@ -1155,6 +1156,33 @@ def get_phases(family: str):
         raise HTTPException(404, f"No BPR template found for product family: {family}")
     return {"family": family, "definition": BPR_PHASES[family]}
 
+def find_existing_bpr(cur, uid: str, lot_code: Optional[str]):
+    """
+    Resolve a BPR by either identifier.
+
+    A wash batch has two names: the METRC UID (primary, what the state
+    tracks) and the hash lot code (secondary, what the floor uses).
+    Different entry points send different ones — wash.html sends the lot
+    code, the batch detail button sends the METRC UID. Either must find
+    the same record, or we create duplicates like the one we just cleaned up.
+
+    The third clause catches legacy rows that were never migrated —
+    those still have the lot code sitting in the uid column.
+    """
+    lc = (lot_code or "").strip()
+    cur.execute("""
+        SELECT * FROM bpr_records
+        WHERE uid = %(uid)s
+           OR (%(lc)s <> '' AND lot_code = %(lc)s)
+           OR (%(lc)s <> '' AND uid      = %(lc)s)
+           OR lot_code = %(uid)s
+        ORDER BY created_at ASC
+        LIMIT 1
+    """, {"uid": uid, "lc": lc})
+    return cur.fetchone()
+
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/create
 # Initializes a BPR record. Idempotent — returns existing if UID already has one.
@@ -1170,8 +1198,7 @@ def create_bpr(req: BPRCreateRequest):
     try:
         with conn.cursor() as cur:
             # Check if exists
-            cur.execute("SELECT * FROM bpr_records WHERE uid = %s", (req.uid,))
-            existing = cur.fetchone()
+            existing = find_existing_bpr(cur, req.uid, req.lot_code)
             if existing:
                 return {
                     "created": False,
@@ -1179,16 +1206,17 @@ def create_bpr(req: BPRCreateRequest):
                     "phases": BPR_PHASES[existing["product_family"]],
                     "message": "BPR already exists for this batch"
                 }
-
+            
             # Create new
             cur.execute("""
-                INSERT INTO bpr_records (uid, product_name, batch_id, mfg_date, category, product_family)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO bpr_records
+                    (uid, product_name, batch_id, mfg_date, category, product_family, lot_code)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
-            """, (req.uid, req.product_name, req.batch_id, req.mfg_date, req.category, family))
+            """, (req.uid, req.product_name, req.batch_id, req.mfg_date,
+                  req.category, family, req.lot_code or None))
             record = dict(cur.fetchone())
 
-            # Pre-create step check rows for all phases
             definition = BPR_PHASES[family]
             for phase in definition["phases"]:
                 for i, _ in enumerate(phase["steps"]):
@@ -1198,15 +1226,17 @@ def create_bpr(req: BPRCreateRequest):
                         ON CONFLICT DO NOTHING
                     """, (record["id"], req.uid, phase["id"], i))
 
-            # ── wash_bpr_id fix ─────────────────────────────────────────
-            # For wash BPRs the uid IS the lot code. Link the BPR to its
-            # component lot server-side so the frontend can never forget to.
-            # Harmless no-op if no matching lot exists (finished-goods BPRs).
+            # ── CHANGED: this UPDATE must match on the LOT CODE, not uid.
+            # Before the migration uid WAS the lot code, so matching on uid
+            # worked by accident. Now that uid holds the METRC UID, matching
+            # on uid would silently match zero rows and the wash_bpr_id link
+            # would never be written — a silent failure with no error.
+            link_lot = (req.lot_code or "").strip() or req.uid
             cur.execute("""
                 UPDATE bpr_component_lots
                 SET type_data = type_data || %s::jsonb, updated_at = NOW()
                 WHERE lot_code = %s
-            """, (json.dumps({"wash_bpr_id": str(record["id"])}), req.uid))
+            """, (json.dumps({"wash_bpr_id": str(record["id"])}), link_lot))
 
         conn.commit()
         return {
@@ -1222,24 +1252,33 @@ def create_bpr(req: BPRCreateRequest):
 # GET /bpr/{uid}
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}")
-def get_bpr(uid: str):
+def get_bpr(uid: str, lot_code: Optional[str] = Query(None)):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM bpr_records WHERE uid = %s", (uid,))
-            record = cur.fetchone()
+            record = find_existing_bpr(cur, uid, lot_code)
             if not record:
                 raise HTTPException(404, "No BPR found for this batch UID")
             record = dict(record)
 
-            cur.execute("""
-                SELECT * FROM bpr_phase_signoffs WHERE uid = %s ORDER BY signed_at
-            """, (uid,))
+            # ── The critical line ──────────────────────────────────────
+            # Every child query keys off the RESOLVED record's uid. Using the
+            # path param here would return the correct header with zero step
+            # checks whenever the caller arrived by lot code — a blank-looking
+            # BPR sitting on top of fully populated data. That failure is
+            # silent: no error, no 404, just unchecked boxes.
+            ruid = record["uid"]
+
+            cur.execute(
+                "SELECT * FROM bpr_phase_signoffs WHERE uid = %s ORDER BY signed_at",
+                (ruid,)
+            )
             signoffs = [dict(r) for r in cur.fetchall()]
 
-            cur.execute("""
-                SELECT * FROM bpr_step_checks WHERE uid = %s ORDER BY phase_id, step_index
-            """, (uid,))
+            cur.execute(
+                "SELECT * FROM bpr_step_checks WHERE uid = %s ORDER BY phase_id, step_index",
+                (ruid,)
+            )
             steps = [dict(r) for r in cur.fetchall()]
 
             family = record["product_family"]
@@ -1515,29 +1554,39 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
 # GET /bpr/{uid}/status
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}/status")
-def get_bpr_status(uid: str):
+def get_bpr_status(uid: str, lot_code: Optional[str] = Query(None)):
+    """
+    `uid` may be either identifier. Printed QR codes on compliance sheets
+    carry the lot code and will keep arriving here forever, so resolution
+    can never assume the METRC UID.
+    """
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT uid, status, product_family, created_at, completed_at,
-                       supervisor_name, pdf_drive_url,
-                       (SELECT COUNT(*) FROM bpr_phase_signoffs WHERE bpr_id = bpr_records.id) as phases_signed
-                FROM bpr_records WHERE uid = %s
-            """, (uid,))
-            rec = cur.fetchone()
+            rec = find_existing_bpr(cur, uid, lot_code)
             if not rec:
                 return {"exists": False, "uid": uid}
-
             rec = dict(rec)
+
+            # Count off the resolved record's id, not the path param.
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM bpr_phase_signoffs WHERE bpr_id = %s",
+                (rec["id"],)
+            )
+            phases_signed = cur.fetchone()["n"]
+
             family = rec["product_family"]
             total_phases = len(BPR_PHASES.get(family, {}).get("phases", []))
             return {
                 "exists": True,
-                "uid": uid,
+                # Return the CANONICAL uid, not what the caller sent. The
+                # frontend uses this for its follow-up /bpr/{uid} fetch, so
+                # the resolver only has to run once per page load.
+                "uid": rec["uid"],
+                "lot_code": rec.get("lot_code"),
                 "status": rec["status"],
                 "product_family": family,
-                "phases_signed": rec["phases_signed"],
+                "phases_signed": phases_signed,
                 "total_phases": total_phases,
                 "created_at": fmt_ts(rec["created_at"]),
                 "completed_at": fmt_ts(rec["completed_at"]),
