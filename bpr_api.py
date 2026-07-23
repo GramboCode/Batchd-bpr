@@ -1555,20 +1555,14 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}/status")
 def get_bpr_status(uid: str, metrc_uid: Optional[str] = Query(None)):
-    """
-    `uid` may be either identifier. Printed QR codes on compliance sheets
-    carry the lot code and will keep arriving here forever, so resolution
-    can never assume the METRC UID.
-    """
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            rec = find_existing_bpr(cur, uid, lot_code)
+            rec = find_existing_bpr(cur, uid, metrc_uid)
             if not rec:
                 return {"exists": False, "uid": uid}
             rec = dict(rec)
 
-            # Count off the resolved record's id, not the path param.
             cur.execute(
                 "SELECT COUNT(*) AS n FROM bpr_phase_signoffs WHERE bpr_id = %s",
                 (rec["id"],)
@@ -1579,11 +1573,8 @@ def get_bpr_status(uid: str, metrc_uid: Optional[str] = Query(None)):
             total_phases = len(BPR_PHASES.get(family, {}).get("phases", []))
             return {
                 "exists": True,
-                # Return the CANONICAL uid, not what the caller sent. The
-                # frontend uses this for its follow-up /bpr/{uid} fetch, so
-                # the resolver only has to run once per page load.
                 "uid": rec["uid"],
-                "lot_code": rec.get("lot_code"),
+                "metrc_uid": rec.get("metrc_uid"),
                 "status": rec["status"],
                 "product_family": family,
                 "phases_signed": phases_signed,
@@ -1595,7 +1586,7 @@ def get_bpr_status(uid: str, metrc_uid: Optional[str] = Query(None)):
             }
     finally:
         conn.close()
-
+        
 # ─────────────────────────────────────────────────────────────────────────
 # PDF generation + Google Drive upload
 # ─────────────────────────────────────────────────────────────────────────
