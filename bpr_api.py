@@ -111,6 +111,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS bpr_records (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     uid             TEXT NOT NULL UNIQUE,
+    metrc_uid       TEXT,
     product_name    TEXT NOT NULL,
     batch_id        TEXT,
     mfg_date        TEXT,
@@ -153,6 +154,7 @@ CREATE TABLE IF NOT EXISTS bpr_step_checks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bpr_uid ON bpr_records(uid);
+CREATE INDEX IF NOT EXISTS idx_bpr_metrc_uid ON bpr_records(metrc_uid);
 CREATE INDEX IF NOT EXISTS idx_signoffs_bpr ON bpr_phase_signoffs(bpr_id);
 CREATE INDEX IF NOT EXISTS idx_steps_bpr_phase ON bpr_step_checks(bpr_id, phase_id);
 
@@ -369,13 +371,13 @@ async def startup():
 # ── Pydantic models (BPR) ─────────────────────────────────────────────────
 
 class BPRCreateRequest(BaseModel):
-    uid: str
+    uid: str                             
     product_name: str
     batch_id: Optional[str] = None
     mfg_date: Optional[str] = None
     category: Optional[str] = None
     bpr_type: Optional[str] = None
-    lot_code: Optional[str] = None 
+    metrc_uid: Optional[str] = None      
 
 class StepCheckRequest(BaseModel):
     phase_id: str
@@ -1156,30 +1158,28 @@ def get_phases(family: str):
         raise HTTPException(404, f"No BPR template found for product family: {family}")
     return {"family": family, "definition": BPR_PHASES[family]}
 
-def find_existing_bpr(cur, uid: str, lot_code: Optional[str]):
+def find_existing_bpr(cur, uid: str, metrc_uid: Optional[str] = None):
     """
-    Resolve a BPR by either identifier.
-
-    A wash batch has two names: the METRC UID (primary, what the state
-    tracks) and the hash lot code (secondary, what the floor uses).
-    Different entry points send different ones — wash.html sends the lot
-    code, the batch detail button sends the METRC UID. Either must find
-    the same record, or we create duplicates like the one we just cleaned up.
-
-    The third clause catches legacy rows that were never migrated —
-    those still have the lot code sitting in the uid column.
+    Resolve a BPR. `uid` is the lot code — the primary, unique key — and is
+    tried first. `metrc_uid` is the source METRC tag, which is deliberately
+    NON-unique: one tag can cover several wash lots (confirmed in production
+    data — some tags map to 9 different hash lots), so it can never be a
+    primary key. It's a fallback for callers that only know the tag, and
+    returns the OLDEST match to stay deterministic when a tag is ambiguous.
     """
-    lc = (lot_code or "").strip()
-    cur.execute("""
-        SELECT * FROM bpr_records
-        WHERE uid = %(uid)s
-           OR (%(lc)s <> '' AND lot_code = %(lc)s)
-           OR (%(lc)s <> '' AND uid      = %(lc)s)
-           OR lot_code = %(uid)s
-        ORDER BY created_at ASC
-        LIMIT 1
-    """, {"uid": uid, "lc": lc})
-    return cur.fetchone()
+    cur.execute("SELECT * FROM bpr_records WHERE uid = %s", (uid,))
+    row = cur.fetchone()
+    if row:
+        return row
+
+    mu = (metrc_uid or "").strip()
+    if mu:
+        cur.execute(
+            "SELECT * FROM bpr_records WHERE metrc_uid = %s ORDER BY created_at ASC LIMIT 1",
+            (mu,)
+        )
+        return cur.fetchone()
+    return None
 
 
 
@@ -1197,8 +1197,7 @@ def create_bpr(req: BPRCreateRequest):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            # Check if exists
-            existing = find_existing_bpr(cur, req.uid, req.lot_code)
+            existing = find_existing_bpr(cur, req.uid, req.metrc_uid)
             if existing:
                 return {
                     "created": False,
@@ -1206,15 +1205,14 @@ def create_bpr(req: BPRCreateRequest):
                     "phases": BPR_PHASES[existing["product_family"]],
                     "message": "BPR already exists for this batch"
                 }
-            
-            # Create new
+
             cur.execute("""
                 INSERT INTO bpr_records
-                    (uid, product_name, batch_id, mfg_date, category, product_family, lot_code)
+                    (uid, product_name, batch_id, mfg_date, category, product_family, metrc_uid)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """, (req.uid, req.product_name, req.batch_id, req.mfg_date,
-                  req.category, family, req.lot_code or None))
+                  req.category, family, req.metrc_uid or None))
             record = dict(cur.fetchone())
 
             definition = BPR_PHASES[family]
@@ -1226,17 +1224,13 @@ def create_bpr(req: BPRCreateRequest):
                         ON CONFLICT DO NOTHING
                     """, (record["id"], req.uid, phase["id"], i))
 
-            # ── CHANGED: this UPDATE must match on the LOT CODE, not uid.
-            # Before the migration uid WAS the lot code, so matching on uid
-            # worked by accident. Now that uid holds the METRC UID, matching
-            # on uid would silently match zero rows and the wash_bpr_id link
-            # would never be written — a silent failure with no error.
-            link_lot = (req.lot_code or "").strip() or req.uid
+            # uid IS the lot code in this model, so matching on it directly
+            # is correct again — no more juggling a separate lookup value.
             cur.execute("""
                 UPDATE bpr_component_lots
                 SET type_data = type_data || %s::jsonb, updated_at = NOW()
                 WHERE lot_code = %s
-            """, (json.dumps({"wash_bpr_id": str(record["id"])}), link_lot))
+            """, (json.dumps({"wash_bpr_id": str(record["id"])}), req.uid))
 
         conn.commit()
         return {
@@ -1252,11 +1246,11 @@ def create_bpr(req: BPRCreateRequest):
 # GET /bpr/{uid}
 # ─────────────────────────────────────────────────────────────────────────
 @app.get("/bpr/{uid}")
-def get_bpr(uid: str, lot_code: Optional[str] = Query(None)):
+def get_bpr(uid: str, metrc_uid: Optional[str] = Query(None)):
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            record = find_existing_bpr(cur, uid, lot_code)
+            record = find_existing_bpr(cur, uid, metrc_uid)
             if not record:
                 raise HTTPException(404, "No BPR found for this batch UID")
             record = dict(record)
@@ -1586,7 +1580,7 @@ def get_bpr_status(uid: str, metrc_uid: Optional[str] = Query(None)):
             }
     finally:
         conn.close()
-        
+
 # ─────────────────────────────────────────────────────────────────────────
 # PDF generation + Google Drive upload
 # ─────────────────────────────────────────────────────────────────────────
