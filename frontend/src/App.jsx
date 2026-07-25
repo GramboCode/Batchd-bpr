@@ -14,6 +14,7 @@ import BPRLoading from "./pages/BPRLoading";
 import Dashboard from "./pages/Dashboard";
 import LotDetail from "./pages/LotDetail";
 import PunchDashboard from "./pages/PunchDashboard";
+import BatchDetail from "./pages/BatchDetail";
 import Login from "./pages/Login";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getToken } from "./lib/api";
@@ -182,6 +183,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRoute />} />
+          <Route path="/batch/:uid" element={<ProtectedRoute><BatchDetail /></ProtectedRoute>} />
           <Route path="/bpr" element={<BPRFlow />} />
           <Route path="/login" element={<Login />} />
           <Route path="/components" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

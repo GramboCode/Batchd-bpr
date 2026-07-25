@@ -8,34 +8,45 @@
 // import still live on the GAS app until those endpoints get their own
 // migration pass.
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
 import "./PunchDashboard.css";
 import AppHeader from "./AppHeader";
 
-// ── Finished goods vs. components ──────────────────────────────────────
-// UID_TRACKER still carries hash-lot/wash rows for METRC bookkeeping,
-// but their real operational home is now the Components dashboard
-// (Postgres, richer data — sessions, ledger, allocations). Showing them
-// here too would just be duplicate, out-of-date information, so they're
-// filtered out by status. This list is intentionally small right now —
-// as more component types (Nano Isolate, Distillate, etc.) get their own
-// Postgres-tracked statuses instead of riding on the Sheet, add those
-// status strings here too.
-const COMPONENT_STATUSES = new Set(["ice extraction"]);
+// ── Finished goods vs. everything else ─────────────────────────────────
+// Two different reasons a row shouldn't show up on the Batches dashboard:
+//
+// 1. COMPONENT_STATUSES — rows whose real operational home is now the
+//    Components dashboard (Postgres — sessions, ledger, allocations).
+//    "ice extraction" is today's live value; "components" is added
+//    pre-emptively for when that status gets renamed on the Sheet side
+//    (per plan: all METRC-source-material rows converge on one
+//    "Components" status so nothing new needs to change here when that
+//    rename happens — just delete "ice extraction" once the migration
+//    is done and confirmed).
+//
+// 2. FINISHED_STATUSES — rows that are done and already shipped. These
+//    should already be excluded server-side (sheets_client.INACTIVE_STATUSES),
+//    but filtering them here too is cheap insurance against any mismatch
+//    between the two lists — redundant-safe, never wrong to exclude twice.
+//    NOTE: matches Config.gs's spelling exactly ("Distru", not "Distro").
+//    Both statuses are now hidden — "passed but not avail" was originally
+//    kept visible (it used to mean "still needs to move to the menu"),
+//    but that's been reversed: skip it here too.
+const COMPONENT_STATUSES = new Set(["ice extraction", "components"]);
+const FINISHED_STATUSES = new Set(["avail in distru/on menu", "passed but not avail in distru"]);
 
-function isComponentRow(batch) {
-  return COMPONENT_STATUSES.has((batch.status || "").toLowerCase().trim());
-}
-
-// Status family → dot color, so new statuses fall back to gray instead
-// of breaking. Extend this as new statuses get added to CONFIG.STATUS.
-function statusDotClass(status) {
-  const s = (status || "").toLowerCase().trim();
-  if (s === "in production") return "dot-orange";
-  if (s.startsWith("submitted for")) return "dot-purple";
-  if (s.includes("testing") || s.includes("ready")) return "dot-blue";
-  if (s === "failed") return "dot-red";
-  return "dot-gray";
+function isHiddenFromBatches(batch) {
+  const s = (batch.status || "").toLowerCase().trim();
+  if (COMPONENT_STATUSES.has(s)) return true;
+  if (FINISHED_STATUSES.has(s)) return true;
+  // Rows like "@conversion" (bulk METRC-source conversions, e.g. Nano THC
+  // Bulk) aren't real finished-good batches either — they don't have a
+  // status yet to key off, so this catches them by batchID shape instead.
+  // Once these get folded into the "Components" status this becomes
+  // redundant with the check above, but doesn't hurt to keep both.
+  if ((batch.batchID || "").trim().startsWith("@")) return true;
+  return false;
 }
 
 const STAT_LABELS = {
@@ -45,18 +56,37 @@ const STAT_LABELS = {
   awaitingResults: "Awaiting Results",
 };
 
-// Same buckets serverGetDashboard/tracker.py group by, needed here to
-// recompute counts client-side after the component rows are filtered out
-// (the backend's `stats` object was computed over ALL sheet rows, so it
-// still includes components in its counts).
+// Mirrors Config.gs's STAT_GROUPS exactly (lowercased for matching).
+// Needed here to recompute counts client-side after the component/
+// finished rows are filtered out — the backend's `stats` object was
+// tallied over ALL sheet rows, so it still includes those in its counts.
+// If Config.gs's groupings change, update here too — there's no single
+// shared source of truth between GAS and this app yet.
 const STAT_GROUPS = {
-  inProduction:    ["in production", "washing", "drying", "sifting"],
-  needLabels:      ["need labels", "ready for labels"],
+  inProduction: [
+    "in production", "ready for packaging", "packaging complete",
+    "submitted for rnd", "passed rnd", "remake",
+  ],
+  needLabels: ["need labels", "labels made"],
   readyForTesting: ["ready for testing"],
-  awaitingResults: ["awaiting results", "testing"],
+  awaitingResults: ["submitted for compliance", "delayed in testing", "testing cancelled"],
 };
 
+// Status family → dot color, driven off the same STAT_GROUPS above so
+// the table's pill colors stay in sync with the stat-card buckets rather
+// than drifting via a second, separately-maintained list of strings.
+export function statusDotClass(status) {
+  const s = (status || "").toLowerCase().trim();
+  if (STAT_GROUPS.inProduction.includes(s)) return "dot-orange";
+  if (STAT_GROUPS.needLabels.includes(s)) return "dot-red";
+  if (STAT_GROUPS.readyForTesting.includes(s)) return "dot-blue";
+  if (STAT_GROUPS.awaitingResults.includes(s)) return "dot-purple";
+  if (s === "failed") return "dot-red";
+  return "dot-gray"; // complete/archived/avail-in-distro and anything unmapped
+}
+
 export default function PunchDashboard() {
+  const navigate = useNavigate();
   const [data, setData]             = useState(null); // full /tracker/dashboard payload
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
@@ -82,10 +112,11 @@ export default function PunchDashboard() {
     }
   }
 
-  // Finished goods only — this is the split the components dashboard
-  // and this one now share the underlying sheet data for.
+  // Finished goods only — everything isHiddenFromBatches() flags (in-
+  // progress components, already-distributed items, conversion rows)
+  // belongs on the Components dashboard or nowhere active at all.
   const finishedGoods = useMemo(
-    () => (data?.batches || []).filter(b => !isComponentRow(b)),
+    () => (data?.batches || []).filter(b => !isHiddenFromBatches(b)),
     [data]
   );
 
@@ -220,7 +251,12 @@ export default function PunchDashboard() {
                 <tr><td colSpan={6} className="pd-empty">No batches match the current filters.</td></tr>
               )}
               {filtered.map(b => (
-                <tr key={b.metrcUID || b.batchID} className="pd-row">
+                <tr
+                  key={b.metrcUID || b.batchID}
+                  className="pd-row"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => navigate(`/batch/${encodeURIComponent(b.metrcUID)}`)}
+                >
                   <td>
                     <span className="pd-product">{b.item || "—"}</span>
                     {b.metrcUID && <span className="pd-uid-sub">{b.metrcUID}</span>}
@@ -234,8 +270,6 @@ export default function PunchDashboard() {
                       {b.status || "—"}
                     </span>
                   </td>
-                  {/* Placeholder for the future single-batch view — no
-                      React batch-detail page exists yet, so no onClick. */}
                   <td className="pd-arrow">→</td>
                 </tr>
               ))}

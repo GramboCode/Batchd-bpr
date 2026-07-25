@@ -9,7 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "./AppHeader.css";
 
-const EXTERNAL_LINKS = {
+export const EXTERNAL_LINKS = {
   // GAS wash page (New Wash Batch) — paste the /exec URL:
   newWashBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=wash",
   // GAS Punch Tools batch dashboard — paste the /exec URL:
