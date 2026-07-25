@@ -34,7 +34,7 @@ export default function AppHeader() {
             Batches
           </Link>
           <Link to="/components" className={`app-nav-link ${onInventory ? "nav-on" : ""}`}>
-            Inventory
+            Components
           </Link>
           <a className="app-nav-link" href={EXTERNAL_LINKS.newWashBatch}
              target="_blank" rel="noreferrer">

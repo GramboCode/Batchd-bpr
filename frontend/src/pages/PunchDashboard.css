@@ -1,0 +1,190 @@
+/* PunchDashboard.css — deliberately mimics the old GAS index.html look
+   (bold black title, plain white stat cards, dot-status pills) rather
+   than the Dashboard.css design system used by Components/LotDetail.
+   The AppHeader above this page is the one piece of new visual language;
+   everything below it stays close to what floor staff already know. */
+
+.pd-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  color: #111827;
+}
+
+.pd-loading, .pd-error, .pd-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: #9CA3AF;
+  font-size: 0.95rem;
+}
+.pd-error { color: #DC2626; }
+
+/* ── Header ── */
+.pd-header { margin-bottom: 22px; }
+.pd-kicker {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2563EB;
+}
+.pd-title {
+  margin: 2px 0 0;
+  font-size: 2.6rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  font-family: Arial, "Helvetica Neue", sans-serif;
+}
+.pd-subtitle { margin-top: 4px; font-size: 0.9rem; color: #6B7280; }
+
+/* ── Stat cards ── */
+.pd-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.pd-stat-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.pd-stat-card:hover { border-color: #D1D5DB; }
+.pd-stat-card.active {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+.pd-stat-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9CA3AF;
+}
+.pd-stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.pd-stat-value.total          { color: #111827; }
+.pd-stat-value.inProduction   { color: #D97706; }
+.pd-stat-value.needLabels     { color: #DC2626; }
+.pd-stat-value.readyForTesting{ color: #2563EB; }
+.pd-stat-value.awaitingResults{ color: #111827; }
+.pd-stat-value.unassignedUIDs { color: #6B7280; }
+
+/* ── Failed banner ── */
+.pd-failed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #FEF2F2;
+  border: 1.5px solid #FCA5A5;
+  border-radius: 10px;
+  padding: 12px 18px;
+  margin-bottom: 18px;
+}
+.pd-failed-icon { font-size: 1.1rem; }
+.pd-failed-text { flex: 1; font-size: 0.85rem; color: #7F1D1D; }
+.pd-failed-title { font-weight: 700; color: #DC2626; margin-right: 8px; }
+.pd-failed-count {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #DC2626;
+}
+
+/* ── Filters ── */
+.pd-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.pd-search {
+  flex: 1;
+  min-width: 220px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.pd-search:focus { outline: none; border-color: #2563EB; }
+.pd-select {
+  border: 1.5px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: #fff;
+  color: #374151;
+}
+
+/* ── Table ── */
+.pd-table-wrap { border-top: 1.5px solid #E5E7EB; }
+.pd-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.pd-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9CA3AF;
+  padding: 10px 8px;
+  border-bottom: 1px solid #E5E7EB;
+}
+.pd-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #F3F4F6;
+  vertical-align: middle;
+}
+.pd-row:hover td { background: #FAFAFA; }
+.pd-product { font-weight: 700; color: #111827; }
+.pd-uid-sub {
+  display: block;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  color: #9CA3AF;
+  margin-top: 1px;
+}
+.pd-mono { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 0.85rem; }
+.pd-dim { color: #9CA3AF; }
+.pd-arrow { color: #D1D5DB; text-align: right; }
+
+/* ── Status pills — dot + label, colored by status family ── */
+.pd-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #4B5563;
+  background: #F3F4F6;
+  border-radius: 999px;
+  padding: 4px 10px 4px 8px;
+}
+.pd-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #9CA3AF; flex-shrink: 0; }
+
+.pd-status-pill.dot-orange { background: #FFF7ED; color: #9A3412; }
+.pd-status-pill.dot-orange .pd-status-dot { background: #D97706; }
+.pd-status-pill.dot-purple { background: #F5F3FF; color: #5B21B6; }
+.pd-status-pill.dot-purple .pd-status-dot { background: #7C3AED; }
+.pd-status-pill.dot-blue { background: #EFF6FF; color: #1E40AF; }
+.pd-status-pill.dot-blue .pd-status-dot { background: #2563EB; }
+.pd-status-pill.dot-red { background: #FEF2F2; color: #991B1B; }
+.pd-status-pill.dot-red .pd-status-dot { background: #DC2626; }
+.pd-status-pill.dot-gray { background: #F3F4F6; color: #4B5563; }
+.pd-status-pill.dot-gray .pd-status-dot { background: #9CA3AF; }
+
+@media (max-width: 640px) {
+  .pd-title { font-size: 1.8rem; }
+  .pd-uid-sub, .pd-arrow { display: none; }
+}
