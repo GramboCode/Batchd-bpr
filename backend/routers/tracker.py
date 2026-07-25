@@ -166,6 +166,38 @@ def get_batch(uid: str, user: dict = Depends(get_current_user)):
         return {"success": False, "error": str(e)}
 
 
+@router.get("/next-uid")
+def get_next_uid(user: dict = Depends(get_current_user)):
+    """
+    Port of serverGetNextUID. Returns the next unassigned METRC tag in
+    consumption order (oldest-imported first, per get_next_available_uid's
+    bottom-up scan).
+
+    IMPORTANT — this is a PREVIEW only, not a reservation. It doesn't
+    lock or mark anything; two people opening the New Batch page at the
+    same moment will see the same "next" tag. That's fine as long as the
+    actual create-batch write re-runs this same lookup at commit time
+    (matching createBatch()'s behavior in Batches.gs, which calls
+    getNextAvailableUID() itself rather than trusting a client-supplied
+    UID) — whichever request commits first gets that tag, the second
+    naturally gets the next one down the list. If the future create
+    endpoint ever accepts a UID from the client instead of re-deriving
+    it server-side, that guarantee breaks and two people could collide
+    on the same tag.
+    """
+    try:
+        client = get_sheets_client()
+        next_uid = client.get_next_available_uid()
+        if not next_uid:
+            return {
+                "success": False,
+                "error": "No available METRC UIDs. Please import new tags before creating a batch.",
+            }
+        return {"success": True, "uid": next_uid["uid"]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/templates")
 def get_templates(user: dict = Depends(get_current_user)):
     """

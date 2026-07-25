@@ -239,6 +239,30 @@ class SheetsClient:
                 return b
         return None
 
+    def get_next_available_uid(self) -> dict | None:
+        """
+        Port of getNextAvailableUID(). Scans from the BOTTOM of the sheet
+        upward — this direction is deliberate, not arbitrary: importUIDs()
+        inserts newly-imported tags at the TOP (row DATA_START_ROW),
+        pushing existing rows down, in descending sort order. Scanning
+        bottom-up therefore finds the OLDEST still-unassigned tag first,
+        consuming tags in roughly the order they were imported rather
+        than always grabbing the newest batch. Getting this backwards
+        would still "work" (any unassigned UID gets returned) but would
+        quietly change which tags get used first.
+
+        Returns None if every imported tag is already assigned to a
+        batch — caller is responsible for the "import more tags" message.
+        """
+        rows = self.get_all_rows()
+        for i in range(len(rows) - 1, -1, -1):
+            row = _pad_row(rows[i], COL["BATCH_ID"])
+            metrc_uid = row[COL["METRC_UID"] - 1]
+            batch_id = row[COL["BATCH_ID"] - 1]
+            if metrc_uid and not batch_id:
+                return {"uid": str(metrc_uid).strip(), "rowIndex": i + DATA_START_ROW}
+        return None
+
     def get_product_templates(self) -> dict:
         """
         Reads the Product Catalog tab and rehydrates each row back into
