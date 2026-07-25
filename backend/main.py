@@ -25,7 +25,7 @@ from routers import components as components_router
 from routers import bpr as bpr_router
 # NOTE: tracker.py doesn't exist yet -- built next, on top of
 # sheets_client.py. Uncomment both lines below once it lands:
-# from routers import tracker as tracker_router
+from routers import tracker as tracker_router
 
 app = FastAPI(title="BatchD API", version="3.0.0")
 
@@ -61,4 +61,4 @@ async def startup():
 app.include_router(auth_router.router)
 app.include_router(components_router.router)
 app.include_router(bpr_router.router)
-# app.include_router(tracker_router.router)
+app.include_router(tracker_router.router)
