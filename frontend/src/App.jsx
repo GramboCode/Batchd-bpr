@@ -6,13 +6,16 @@
 //   /components/:lotCode     → Lot detail (ledger view)
 //   /bpr                     → BPR flow, explicit path (same query params as root)
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import BPRForm from "./pages/BPRForm";
 import BPRComplete from "./pages/BPRComplete";
 import BPRError from "./pages/BPRError";
 import BPRLoading from "./pages/BPRLoading";
 import Dashboard from "./pages/Dashboard";
 import LotDetail from "./pages/LotDetail";
+import Login from "./pages/Login";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { getToken } from "./lib/api";
 
 // ── Read URL params ────────────────────────────────────────────────────────
 function getParams() {
@@ -37,9 +40,18 @@ export const API_BASE = import.meta.env.VITE_API_URL || "https://batchd-bpr-prod
 const _origFetch = window.fetch.bind(window);
 window.fetch = (url, opts = {}) => {
   if (typeof url === "string" && url.startsWith(API_BASE)) {
+    // Both headers ride together on purpose: legacy routes (bpr.py,
+    // components.py) still only check X-API-Key today, while new routes
+    // (tracker.py, and anything migrated later) check the Bearer JWT.
+    // Sending both means no route cares which auth era it's from.
+    const token = getToken();
     opts = {
       ...opts,
-      headers: { ...(opts.headers || {}), "X-API-Key": import.meta.env.VITE_BATCHD_API_KEY || "" },
+      headers: {
+        ...(opts.headers || {}),
+        "X-API-Key": import.meta.env.VITE_BATCHD_API_KEY || "",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     };
   }
   return _origFetch(url, opts);
@@ -140,15 +152,39 @@ function RootRoute() {
   return hasUid ? <BPRFlow /> : <Dashboard />;
 }
 
+// ── Gate for pages that require a logged-in user ──────────────────────────
+// Not applied to any route yet — Dashboard/LotDetail/BPR still run on the
+// legacy X-API-Key and stay open. This wrapper is here so the next page
+// (the Punch Tools dashboard, calling /tracker/*) can drop straight in:
+//   <Route path="/tools" element={<ProtectedRoute><PunchDashboard /></ProtectedRoute>} />
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  // Still checking whether a stored token is valid — render nothing
+  // rather than flashing the login screen for a split second.
+  if (loading) return null;
+
+  if (!user) {
+    // Remember where they were headed so Login can send them back
+    // after a successful sign-in, instead of always landing on "/".
+    return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<RootRoute />} />
-        <Route path="/bpr" element={<BPRFlow />} />
-        <Route path="/components/:lotCode" element={<LotDetail />} />
-        <Route path="*" element={<Dashboard />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<RootRoute />} />
+          <Route path="/bpr" element={<BPRFlow />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/components/:lotCode" element={<LotDetail />} />
+          <Route path="*" element={<Dashboard />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
