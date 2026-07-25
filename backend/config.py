@@ -71,6 +71,16 @@ ADMIN_EMAILS = {
     ).split(",")
     if e.strip()
 }
+# Explicit allowlist for people WITHOUT a @punchedibles.com Workspace
+# account (e.g. contractors, or staff in a new state before their
+# Workspace account is provisioned). Comma-separated in Railway so this
+# never needs a code deploy to update. Starts empty — add entries as
+# non-Workspace users come on board.
+EXTRA_ALLOWED_EMAILS = {
+    e.strip().lower()
+    for e in _optional_env("EXTRA_ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+}
 
 # ── Sheets (Punch Tools / UID_TRACKER) ───────────────────────────────────
 TRACKER_SS_ID = "1yNldRwg8E0paStewgW82ZGouIRqE9S9XKYdfEPmOEqU"
