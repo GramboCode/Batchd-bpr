@@ -72,6 +72,14 @@ INACTIVE_STATUSES = {
     "archived",
 }
 
+# The product catalog tab — same spreadsheet as UID_TRACKER (see
+# migrate_templates.gs), replacing GAS's PropertiesService-backed
+# getProductTemplates(). One row per product key: brand/label/category/
+# uom/type/fields/pattern/hint as flat columns, everything else
+# (flavors, formats, tiers, defaults — whatever varies by product type)
+# packed into a JSON blob in the last column.
+PRODUCT_CATALOG_TAB = "Product Catalog"
+
 
 class SheetsClient:
     """
@@ -121,6 +129,42 @@ class SheetsClient:
         ).execute()
         return result.get("values", [])
 
+    def get_folder_urls(self) -> dict[int, str]:
+        """
+        Returns {row_index: folder_url}, one entry per row that has a
+        Drive folder link on its ITEM cell.
+
+        This is the Python side of what GAS's getBatchByUID() does with
+        getRichTextValue().getLinkUrl() — the folder link isn't a plain
+        cell value, it's a hyperlink attached to the cell, which the
+        values().get() endpoint used everywhere else in this file simply
+        can't see. Reading it requires spreadsheets.get() with an
+        explicit `fields` mask instead.
+
+        Pulled as one bulk call for the whole Item column rather than
+        per-row (which is what the old GAS fallback path did) — same
+        total data, one API round trip instead of one per batch.
+        """
+        item_col_letter = self._col_letter(COL["ITEM"])
+        range_name = f"{TRACKER_TAB}!{item_col_letter}{DATA_START_ROW}:{item_col_letter}"
+        result = self._sheet.get(
+            spreadsheetId=TRACKER_SS_ID,
+            ranges=[range_name],
+            fields="sheets.data.rowData.values.hyperlink",
+        ).execute()
+
+        urls: dict[int, str] = {}
+        try:
+            row_data = result["sheets"][0]["data"][0].get("rowData", [])
+        except (KeyError, IndexError):
+            return urls
+
+        for i, row in enumerate(row_data):
+            values = row.get("values", [])
+            if values and values[0].get("hyperlink"):
+                urls[i + DATA_START_ROW] = values[0]["hyperlink"]
+        return urls
+
     def get_batches(self) -> list[dict]:
         """
         Parses raw rows into batch dicts, mirroring the exact shape
@@ -129,6 +173,7 @@ class SheetsClient:
         google.script.run calls for fetch() calls against the new API.
         """
         rows = self.get_all_rows()
+        folder_urls = self.get_folder_urls()
         batches = []
 
         for i, row in enumerate(rows):
@@ -141,8 +186,10 @@ class SheetsClient:
             if not batch_id:
                 continue
 
+            row_index = i + DATA_START_ROW
+
             batches.append({
-                "rowIndex": i + DATA_START_ROW,
+                "rowIndex": row_index,
                 "metrcUID": str(metrc_uid).strip(),
                 "item": row[COL["ITEM"] - 1] or "",
                 "category": row[COL["CATEGORY"] - 1] or "",
@@ -156,7 +203,11 @@ class SheetsClient:
                 "status": row[COL["STATUS"] - 1] or "",
                 "testDate": row[COL["TEST_DATE"] - 1] or "",
                 "mridLabel": row[COL["MRID_LABEL"] - 1] or "",
-                "batchSheetURL": row[COL["BATCH_SHEET_URL"] - 1] or "",
+                # batchSheetURL dropped — confirmed dead now that the folder
+                # system replaced it (column write was removed on the GAS
+                # side too, to free up space on the sheet). folderURL is
+                # the real, live link every batch actually has.
+                "folderURL": folder_urls.get(row_index, ""),
                 "retailIDMade": row[COL["RETAIL_ID_MADE"] - 1] is True,
                 "metrcSynced": row[COL["METRC_SYNCED"] - 1] is True,
                 "labSampleIDRND": row[COL["LAB_SAMPLE_ID_RND"] - 1] or "",
@@ -187,6 +238,59 @@ class SheetsClient:
             if b["metrcUID"].strip().lower() == target:
                 return b
         return None
+
+    def get_product_templates(self) -> dict:
+        """
+        Reads the Product Catalog tab and rehydrates each row back into
+        the same flat template shape GAS's getProductTemplates() returned
+        — brand/label/category/uom/type/fields/pattern/hint as top-level
+        keys, plus whatever that row's options_json holds (flavors,
+        formats, tiers, defaults) merged in on top. The frontend's product
+        tile picker and buildNameFromPattern() logic expect exactly this
+        shape, so this is a straight rehydration, not a redesign.
+
+        A malformed options_json on one row degrades to an empty dict
+        for that row rather than taking down the whole endpoint — one
+        bad row from a manual edit shouldn't block every other product
+        from loading.
+        """
+        range_name = f"{PRODUCT_CATALOG_TAB}!A2:J"  # skip header row
+        result = self._sheet.values().get(
+            spreadsheetId=TRACKER_SS_ID,
+            range=range_name,
+        ).execute()
+        rows = result.get("values", [])
+
+        templates: dict = {}
+        for row in rows:
+            row = _pad_row(row, 10)
+            key = row[0].strip() if row[0] else ""
+            if not key:
+                continue
+
+            fields_str = row[6] or ""
+            options_str = row[9] or ""
+
+            try:
+                options = json.loads(options_str) if options_str.strip() else {}
+            except json.JSONDecodeError:
+                options = {}
+
+            template = {
+                "brand": row[1] or "",
+                "label": row[2] or "",
+                "category": row[3] or "",
+                "uom": row[4] or "",
+                "type": row[5] or "",
+                "fields": [f.strip() for f in fields_str.split(",") if f.strip()],
+                "pattern": row[7] or "",
+                "hint": row[8] or "",
+            }
+            template.update(options)  # flavors/formats/tiers/defaults, per-row
+
+            templates[key] = template
+
+        return templates
 
     def update_status(self, uid: str, status: str) -> bool:
         """Port of updateBatchStatus. Writes STATUS + LAST_UPDATED cols."""

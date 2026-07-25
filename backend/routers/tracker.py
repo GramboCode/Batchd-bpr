@@ -166,6 +166,23 @@ def get_batch(uid: str, user: dict = Depends(get_current_user)):
         return {"success": False, "error": str(e)}
 
 
+@router.get("/templates")
+def get_templates(user: dict = Depends(get_current_user)):
+    """
+    Port of serverGetTemplates. Templates now live in the Product Catalog
+    tab (see migrate_templates.gs) instead of GAS's PropertiesService —
+    same {success, templates, labs} shape either way, so create.html's
+    port needs no changes to how it reads the response, only how it
+    fetches it.
+    """
+    try:
+        client = get_sheets_client()
+        templates = client.get_product_templates()
+        return {"success": True, "templates": templates, "labs": LABS}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/search")
 def search(
     q: Optional[str] = Query(None),
