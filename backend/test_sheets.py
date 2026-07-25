@@ -12,6 +12,9 @@ Safe to delete once you've confirmed it works — this isn't part of the
 running app, main.py never imports it.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from sheets_client import get_sheets_client
 
 client = get_sheets_client()
@@ -26,3 +29,4 @@ if batches:
 
 active = client.get_active_batches()
 print(f"\nActive batches (inactive statuses filtered out): {len(active)}")
+
