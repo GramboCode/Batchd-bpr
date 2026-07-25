@@ -13,6 +13,7 @@ import BPRError from "./pages/BPRError";
 import BPRLoading from "./pages/BPRLoading";
 import Dashboard from "./pages/Dashboard";
 import LotDetail from "./pages/LotDetail";
+import PunchDashboard from "./pages/PunchDashboard";
 import Login from "./pages/Login";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getToken } from "./lib/api";
@@ -145,18 +146,20 @@ function BPRFlow() {
 }
 
 // ── Root route: QR deep links (with ?uid=) get the BPR flow; bare visits
-//    get the dashboard. This is what keeps every printed QR working. ──────
+//    get the Punch Tools batch dashboard — this is what keeps every
+//    printed QR working while also making "/" the real landing page. ─────
 function RootRoute() {
   const location = useLocation();
   const hasUid = new URLSearchParams(location.search).get("uid");
-  return hasUid ? <BPRFlow /> : <Dashboard />;
+  if (hasUid) return <BPRFlow />;
+  return (
+    <ProtectedRoute>
+      <PunchDashboard />
+    </ProtectedRoute>
+  );
 }
 
 // ── Gate for pages that require a logged-in user ──────────────────────────
-// Not applied to any route yet — Dashboard/LotDetail/BPR still run on the
-// legacy X-API-Key and stay open. This wrapper is here so the next page
-// (the Punch Tools dashboard, calling /tracker/*) can drop straight in:
-//   <Route path="/tools" element={<ProtectedRoute><PunchDashboard /></ProtectedRoute>} />
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -181,8 +184,9 @@ export default function App() {
           <Route path="/" element={<RootRoute />} />
           <Route path="/bpr" element={<BPRFlow />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/components/:lotCode" element={<LotDetail />} />
-          <Route path="*" element={<Dashboard />} />
+          <Route path="/components" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/components/:lotCode" element={<ProtectedRoute><LotDetail /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
 import "./Dashboard.css";
+import AppHeader from "./AppHeader";
 
 const TXN_LABELS = {
   production:    { label: "Production",    sign: "+" },

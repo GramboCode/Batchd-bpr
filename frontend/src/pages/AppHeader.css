@@ -59,7 +59,35 @@
 .nav-on { color: #fff; background: #E8192C; }
 .nav-on:hover { background: #E8192C; }
 
+.app-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.app-user-email {
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-size: 0.76rem;
+  color: #8890A8;
+  white-space: nowrap;
+}
+.app-user-logout {
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #C3C9D9;
+  background: none;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.app-user-logout:hover { color: #fff; border-color: #E8192C; background: rgba(232,25,44,0.1); }
+
 @media (max-width: 560px) {
   .app-brand-sub { display: none; }
   .app-nav-link { padding: 6px 8px; font-size: 0.72rem; }
+  .app-user-email { display: none; }
 }

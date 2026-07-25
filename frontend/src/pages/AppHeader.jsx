@@ -6,6 +6,7 @@
 // migrates to Railway, these external links graduate into real routes here
 // and the constants get deleted — this header is the future app shell.
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import "./AppHeader.css";
 
 const EXTERNAL_LINKS = {
@@ -17,7 +18,9 @@ const EXTERNAL_LINKS = {
 
 export default function AppHeader() {
   const location = useLocation();
-  const onInventory = location.pathname === "/" || location.pathname.startsWith("/components");
+  const { user, logout } = useAuth();
+  const onBatches   = location.pathname === "/";
+  const onInventory = location.pathname.startsWith("/components");
 
   return (
     <header className="app-header">
@@ -27,7 +30,10 @@ export default function AppHeader() {
           <span className="app-brand-sub">Punch Tools</span>
         </Link>
         <nav className="app-nav">
-          <Link to="/" className={`app-nav-link ${onInventory ? "nav-on" : ""}`}>
+          <Link to="/" className={`app-nav-link ${onBatches ? "nav-on" : ""}`}>
+            Batches
+          </Link>
+          <Link to="/components" className={`app-nav-link ${onInventory ? "nav-on" : ""}`}>
             Inventory
           </Link>
           <a className="app-nav-link" href={EXTERNAL_LINKS.newWashBatch}
@@ -36,9 +42,15 @@ export default function AppHeader() {
           </a>
           <a className="app-nav-link" href={EXTERNAL_LINKS.punchTools}
              target="_blank" rel="noreferrer">
-            Batch Dashboard ↗
+            Legacy GAS Dashboard ↗
           </a>
         </nav>
+        {user && (
+          <div className="app-user">
+            <span className="app-user-email">{user.email}</span>
+            <button className="app-user-logout" onClick={logout}>Sign out</button>
+          </div>
+        )}
       </div>
     </header>
   );
