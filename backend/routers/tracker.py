@@ -326,26 +326,25 @@ class BatchUpdate(BaseModel):
     target_qty: Optional[str] = None
     quantity: Optional[str] = None
     mfg_date: Optional[str] = None
+    lab_sample_id_rnd: Optional[str] = None
+    lab_sample_id_coa: Optional[str] = None
 
 
-async def _gas_set_batch_status(uid: str, status: str) -> dict:
+async def _gas_post(action: str, fields: dict) -> dict:
     """
-    POSTs to the GAS webhook to change a batch's STATUS via updateBatchStatus,
-    which preserves its GAS-side side effects (cache-bust, and syncUIDToDistroLog
-    where it runs). Returns GAS's JSON result, or an {success: false, error}
-    dict if the webhook is unreachable / returns non-JSON. Carries the shared
-    secret so it clears the doPost gate.
+    POSTs an action to the GAS webhook (doPost) and returns its JSON result.
+    Used for every operation that must run inside GAS to preserve side effects
+    the backend can't replicate — status changes (updateBatchStatus) and testing
+    pushes (serverPushToTestingOrder / serverRemoveTestingSubmission, which write
+    a separate testing-order sheet + the Distro Log). Stamps the shared secret so
+    it clears the doPost gate; returns {success: false, error} if the webhook is
+    unreachable or returns non-JSON.
     """
     webhook_url = os.environ.get("GAS_WEBHOOK_URL")
     if not webhook_url:
         return {"success": False, "error": "GAS_WEBHOOK_URL not configured"}
 
-    payload = {
-        "action": "setBatchStatus",
-        "uid":    uid,
-        "status": status,
-        "secret": os.environ.get("GAS_SHARED_SECRET", ""),
-    }
+    payload = {"action": action, "secret": os.environ.get("GAS_SHARED_SECRET", ""), **fields}
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json=payload)
@@ -377,10 +376,12 @@ async def update_batch(
         # ── Plain field edits — direct sheet write, no side effects ──
         field_updates = {
             k: v for k, v in {
-                "lab":        body.lab,
-                "target_qty": body.target_qty,
-                "quantity":   body.quantity,
-                "mfg_date":   body.mfg_date,
+                "lab":               body.lab,
+                "target_qty":        body.target_qty,
+                "quantity":          body.quantity,
+                "mfg_date":          body.mfg_date,
+                "lab_sample_id_rnd": body.lab_sample_id_rnd,
+                "lab_sample_id_coa": body.lab_sample_id_coa,
             }.items() if v is not None
         }
         if field_updates:
@@ -391,7 +392,7 @@ async def update_batch(
         if body.status is not None:
             if body.status not in STATUS_LIST:
                 return {"success": False, "error": f"Invalid status: {body.status}"}
-            gas_result = await _gas_set_batch_status(uid, body.status)
+            gas_result = await _gas_post("setBatchStatus", {"uid": uid, "status": body.status})
             if not gas_result.get("success"):
                 return {
                     "success": False,
@@ -405,5 +406,68 @@ async def update_batch(
             return {"success": False, "error": f"Batch not found: {uid}"}
         return {"success": True, "batch": batch}
 
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── TESTING PUSH — delegated to GAS ────────────────────────────────────────
+# serverPushToTestingOrder / serverRemoveTestingSubmission live in a GAS file
+# (they write a separate testing-order sheet + the Distro Log), so these
+# endpoints just relay to the webhook rather than reimplement that logic. Both
+# read the batch back afterward so the client re-renders with the new status.
+
+class PushTestingRequest(BaseModel):
+    push_type: str                        # "RND" | "COMPLIANCE"
+    date: str                             # submission date (yyyy-mm-dd)
+    sample_size: Optional[str] = None     # units sent to lab, or None
+    rnd_type: Optional[str] = None        # R&D test type (RND only); GAS uses 'Compliance' otherwise
+
+
+@router.post("/batch/{uid}/push-testing")
+async def push_testing(
+    uid: str,
+    body: PushTestingRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Relays to GAS serverPushToTestingOrder(uid, pushType, date, sampleSize,
+    rndType). GAS requires the batch to already have a lab assigned; if it
+    doesn't, GAS returns {success:false, error}, which we surface as-is.
+    """
+    try:
+        gas = await _gas_post("pushToTestingOrder", {
+            "uid":        uid,
+            "pushType":   body.push_type,
+            "date":       body.date,
+            "sampleSize": body.sample_size,
+            "rndType":    body.rnd_type or "Compliance",
+        })
+        if not gas.get("success"):
+            return {"success": False, "error": gas.get("error", "Push to testing failed")}
+
+        batch = get_sheets_client().get_batch_by_uid(uid)
+        return {
+            "success": True,
+            "batch": batch,
+            "newStatus": gas.get("newStatus"),
+            "tabName": gas.get("tabName"),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/batch/{uid}/remove-testing")
+async def remove_testing(uid: str, user: dict = Depends(get_current_user)):
+    """
+    Relays to GAS serverRemoveTestingSubmission(uid): removes the batch from the
+    testing order sheet and reverts status to In Production.
+    """
+    try:
+        gas = await _gas_post("removeTestingSubmission", {"uid": uid})
+        if not gas.get("success"):
+            return {"success": False, "error": gas.get("error", "Remove testing failed")}
+
+        batch = get_sheets_client().get_batch_by_uid(uid)
+        return {"success": True, "batch": batch}
     except Exception as e:
         return {"success": False, "error": str(e)}

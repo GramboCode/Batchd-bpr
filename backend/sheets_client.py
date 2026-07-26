@@ -70,10 +70,14 @@ COL = {
 # "quantity" is the final/confirmed qty; "target_qty" is the goal set at
 # creation — same two columns createBatch writes on the GAS side.
 _EDITABLE_FIELD_COLS = {
-    "target_qty": COL["TARGET_QTY"],
-    "quantity":   COL["QUANTITY"],
-    "mfg_date":   COL["MFG_DATE"],
-    "lab":        COL["LAB"],
+    "target_qty":        COL["TARGET_QTY"],
+    "quantity":          COL["QUANTITY"],
+    "mfg_date":          COL["MFG_DATE"],
+    "lab":               COL["LAB"],
+    # Lab sample IDs — plain cell writes too (GAS's serverUpdateSampleID just
+    # sets these columns; no testing-sheet side effects, unlike a push).
+    "lab_sample_id_rnd": COL["LAB_SAMPLE_ID_RND"],
+    "lab_sample_id_coa": COL["LAB_SAMPLE_ID_COA"],
 }
 
 # Statuses that drop a batch off the "active" dashboard view — mirrors

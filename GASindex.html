@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <base target="_top">
+<script>
+  (function() {
+    var t = localStorage.getItem('punch_theme') || 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+
+
+<script>
+  // Your deployment base URL — update this if you create a new deployment
+  var DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec';
+
+  function navigate(page, params) {
+    var url = DEPLOY_URL + '?page=' + page;
+    if (params) url += '&' + params;
+    // Force top-level navigation out of any iframe
+    if (window.top !== window.self) {
+      window.top.location.href = url;
+    } else {
+      window.location.href = url;
+    }
+  }
+</script>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Punch Tools</title>
+  <style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* ── THEME SYSTEM ─────────────────────────────── */
+  :root, [data-theme="light"] {
+    --punch-red:     #E8192C;
+    --punch-red-dk:  #C01020;
+    --display:       'Arial Narrow', Arial, sans-serif;
+    --body:          -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono:          'Courier New', monospace;
+    --radius:        6px;
+    --radius-lg:     10px;
+    --bg:            #F4F6FA;
+    --bg2:           #FFFFFF;
+    --bg3:           #F0F2F7;
+    --bg4:           #E8EBF2;
+    --border:        #E2E6EF;
+    --border2:       #D0D5E3;
+    --border3:       #B8BECE;
+    --text:          #0F1117;
+    --text2:         #4A5068;
+    --text3:         #8890A8;
+    --green:         #0A7A3E;
+    --blue:          #1A56DB;
+    --amber:         #B45309;
+    --punch-gold:    #B45309;
+    --punch-gold-dk: #92420A;
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg:       #0a0a0b;
+    --bg2:      #111214;
+    --bg3:      #1a1c1f;
+    --bg4:      #222428;
+    --border:   #232528;
+    --border2:  #2e3035;
+    --border3:  #3a3d44;
+    --text:     #f0f0f2;
+    --text2:    #8a8d97;
+    --text3:    #4a4d56;
+    --green:    #39d87a;
+    --blue:     #3d9eff;
+    --amber:    #f5a623;
+    --punch-gold:    #f5a623;
+    --punch-gold-dk: #d4891a;
+    --shadow-sm: none;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 17px; }
+
+  body {
+    font-family: var(--body);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 { font-family: var(--display); font-size: 2.6rem; font-weight: 900; letter-spacing: -0.01em; text-transform: uppercase; line-height: 0.95; }
+  h2 { font-family: var(--display); font-size: 1.6rem; font-weight: 800; text-transform: uppercase; }
+  h3 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+
+  .mono  { font-family: var(--mono); }
+  .muted { color: var(--text2); }
+  .red   { color: var(--punch-red); }
+  .gold  { color: var(--punch-gold); }
+
+  /* APP SHELL */
+  .app-shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+  /* TOPBAR */
+  .topbar { background: var(--bg2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+  .topbar-inner { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 56px; max-width: 1280px; margin: 0 auto; }
+
+  .topbar-brand { display: flex; align-items: center; text-decoration: none; }
+  .brand-block  { background: var(--punch-red); padding: 6px 12px 5px; border-radius: var(--radius) 0 0 var(--radius); }
+  .brand-block span { font-family: var(--display); font-size: 1rem; font-weight: 900; color: white; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; display: block; }
+  .brand-sub    { background: var(--bg3); border: 1px solid var(--border2); border-left: none; padding: 6px 12px 5px; border-radius: 0 var(--radius) var(--radius) 0; }
+  .brand-sub span { font-family: var(--display); font-size: 0.75rem; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; line-height: 1; display: block; }
+
+  .topbar-nav { display: flex; align-items: center; gap: 2px; }
+  .topbar-nav a { font-family: var(--display); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); text-decoration: none; padding: 7px 14px; border-radius: var(--radius); transition: all 0.12s; }
+  .topbar-nav a:hover  { color: var(--text); background: var(--bg3); }
+  .topbar-nav a.active { color: white; background: var(--punch-red); }
+
+  /* PAGE */
+  .page { padding: 28px 24px 48px; max-width: 1280px; margin: 0 auto; width: 100%; }
+
+  .page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; gap: 16px; flex-wrap: wrap; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .page-header .eyebrow { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--punch-red); margin-bottom: 6px; }
+
+  /* STAT CARDS */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; margin-bottom: 28px; }
+
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 18px 16px; position: relative; overflow: hidden; transition: border-color 0.15s; animation: fadeUp 0.35s ease both; }
+  .stat-card:hover { border-color: var(--border3); }
+  .stat-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--punch-red); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease; }
+  .stat-card:hover::after { transform: scaleX(1); }
+  .stat-card .stat-label { font-family: var(--display); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 10px; }
+  .stat-card .stat-value { font-family: var(--display); font-size: 2.4rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1; color: var(--text); }
+  .stat-card.danger  .stat-value { color: var(--punch-red); }
+  .stat-card.warning .stat-value { color: var(--amber); }
+  .stat-card.success .stat-value { color: var(--green); }
+  .stat-card.info    .stat-value { color: var(--blue); }
+
+  /* TOOLBAR */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+
+  /* INPUTS */
+  .input-wrap { position: relative; flex: 1; min-width: 200px; }
+  .input-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 0.9rem; pointer-events: none; }
+
+  input[type="text"], input[type="date"], input[type="number"], textarea, select {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius);
+    color: var(--text); font-family: var(--body); font-size: 0.88rem; padding: 9px 12px;
+    width: 100%; outline: none; transition: border-color 0.15s, background 0.15s;
+    -webkit-appearance: none; appearance: none;
+  }
+  .input-wrap input { padding-left: 34px; }
+  input:focus, textarea:focus, select:focus { border-color: var(--punch-red); background: var(--bg3); }
+  input::placeholder, textarea::placeholder { color: var(--text3); }
+  select option { background: var(--bg2); }
+  textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+  .field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field-group label { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 18px; border-radius: var(--radius); font-family: var(--display); font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border: 1px solid transparent; transition: all 0.12s; white-space: nowrap; text-decoration: none; line-height: 1; }
+  .btn-primary { background: var(--punch-red); color: white; border-color: var(--punch-red); }
+  .btn-primary:hover { background: var(--punch-red-dk); border-color: var(--punch-red-dk); }
+  .btn-ghost   { background: transparent; color: var(--text2); border-color: var(--border2); }
+  .btn-ghost:hover { background: var(--bg3); color: var(--text); border-color: var(--border3); }
+  .btn-gold    { background: var(--punch-gold); color: #0a0a0b; border-color: var(--punch-gold); }
+  .btn-gold:hover { background: var(--punch-gold-dk); border-color: var(--punch-gold-dk); }
+  .btn-danger  { background: transparent; color: var(--punch-red); border-color: var(--punch-red); }
+  .btn-danger:hover { background: var(--punch-red); color: white; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+  .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+
+  /* TABLE */
+  .table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .table-header { display: grid; grid-template-columns: 2fr 1.3fr 0.8fr 0.9fr 1.1fr 60px; padding: 9px 20px; background: var(--bg3); border-bottom: 1px solid var(--border); font-family: var(--display); font-size: 0.68rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .batch-row { display: grid; grid-template-columns: 2fr 1.3fr 0.8fr 0.9fr 1.1fr 60px; padding: 13px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; align-items: center; animation: fadeUp 0.3s ease both; }
+  .batch-row:last-child { border-bottom: none; }
+  .batch-row:hover { background: var(--bg3); }
+  .batch-row:hover .row-arrow { color: var(--punch-red); transform: translateX(3px); }
+  .row-arrow { color: var(--text3); font-size: 0.9rem; transition: all 0.15s; text-align: right; }
+
+  .product-name { font-family: var(--display); font-size: 1rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; line-height: 1.2; }
+  .product-uid  { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .batch-id-cell { font-family: var(--mono); font-size: 0.75rem; color: var(--text2); }
+  .lab-cell  { font-family: var(--display); font-size: 0.82rem; font-weight: 600; color: var(--text2); text-transform: uppercase; }
+  .date-cell { font-size: 0.82rem; color: var(--text2); font-family: var(--mono); }
+
+  /* BADGES */
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 2px; border-radius: 4px; font-family: var(--display); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; line-height: 1.4; }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .badge-production { color: var(--amber);    background: rgba(245,166,35,0.12); }
+  .badge-testing    { color: var(--blue);     background: rgba(61,158,255,0.12); }
+  .badge-labels     { color: var(--punch-red);background: rgba(232,25,44,0.12); }
+  .badge-complete   { color: var(--green);    background: rgba(57,216,122,0.12); }
+  .badge-rnd        { color: #c084fc;         background: rgba(192,132,252,0.12); }
+  .badge-default    { color: var(--text2);    background: var(--bg3); }
+
+  /* CARD */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-body   { padding: 20px; }
+  .card-accent { border-left: 3px solid var(--punch-red); }
+
+  /* UTILS */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  .empty-state { padding: 56px 20px; text-align: center; }
+  .empty-icon  { font-family: var(--display); font-size: 3rem; font-weight: 900; color: var(--border2); text-transform: uppercase; letter-spacing: -0.02em; line-height: 1; margin-bottom: 12px; }
+  .empty-state p { color: var(--text3); font-size: 0.88rem; }
+
+  .loading { padding: 40px; text-align: center; color: var(--text3); font-size: 0.82rem; font-family: var(--display); text-transform: uppercase; letter-spacing: 0.08em; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border2); border-top-color: var(--punch-red); border-radius: 50%; animation: spin 0.65s linear infinite; vertical-align: middle; margin-right: 8px; }
+
+  .result-count { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-top: 10px; }
+
+  .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast { padding: 11px 16px; border-radius: var(--radius); font-family: var(--display); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); animation: slideIn 0.18s ease; max-width: 300px; pointer-events: all; }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error   { border-left: 3px solid var(--punch-red); }
+  .toast.info    { border-left: 3px solid var(--blue); }
+  .toast.warning { border-left: 3px solid var(--amber); }
+
+  .toggle-label { display: flex; align-items: center; gap: 7px; font-family: var(--display); font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text2); cursor: pointer; white-space: nowrap; user-select: none; }
+  .toggle-label input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--punch-red); cursor: pointer; }
+
+  /* ANIMATIONS */
+  @keyframes fadeUp  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin    { to   { transform: rotate(360deg); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .page { padding: 16px 14px 40px; }
+    h1 { font-size: 2rem; }
+    .table-header { display: none; }
+    .batch-row { grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 4px 8px; padding: 12px 14px; }
+    .batch-row > *:nth-child(2), .batch-row > *:nth-child(3), .batch-row > *:nth-child(4) { display: none; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .topbar-nav { display: none; }
+  }
+
+  .stat-card.active-filter {
+    border-color: var(--punch-red);
+    box-shadow: 0 0 0 2px rgba(232,25,44,0.15);
+  }
+  .stat-card.active-filter::after {
+    transform: scaleX(1);
+  }
+
+
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ── TOP BAR ─────────────────────────────────────────── -->
+  <header class="topbar">
+  <div class="topbar-inner">
+    <a href="javascript:void(0)" onclick="navigate('index')" class="topbar-brand">
+      <div class="brand-block"><span>Punch</span></div>
+      <div class="brand-sub"><span>Tools</span></div>
+    </a>
+    <nav class="topbar-nav">
+      <a href="javascript:void(0)" onclick="navigate('index')" class="active">Dashboard</a>
+      <a href="javascript:void(0)" onclick="navigate('create')">New Batch</a>
+      <a href="javascript:void(0)" onclick="navigate('import')">Import Tags</a>
+    </nav>
+  
+<button onclick="(function(){var t=document.documentElement.getAttribute('data-theme');var n=t==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('punch_theme',n);document.getElementById('themeBtn').textContent=n==='light'?'\u263D':'\u2600';})()" id="themeBtn" style="background:var(--bg3);border:1.5px solid var(--border2);border-radius:6px;padding:6px 11px;cursor:pointer;font-size:1rem;line-height:1;color:var(--text2);" title="Toggle theme">&#9790;</button>
+</div>
+  </header>
+
+  <!-- ── MAIN PAGE ────────────────────────────────────────── -->
+  <main class="page">
+
+    <!-- Page header -->
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px; gap:16px; flex-wrap:wrap;">
+      <div>
+        <h1>Batch Dashboard</h1>
+        <p class="muted" style="margin-top:4px; font-size:0.85rem;">
+          UID Tracker — Punch Edibles &amp; Extracts
+        </p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <a href="javascript:void(0)" onclick="navigate('import')" class="btn btn-ghost">Import Tags</a>
+        <a href="javascript:void(0)" onclick="navigate('create')" class="btn btn-primary">+ New Batch</a>
+      </div>
+    </div>
+
+    <!-- ── STAT CARDS ──────────────────────────────────────── -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card warning" id="cardProduction" 
+          style="animation-delay:0.05s; cursor:pointer;" 
+          onclick="filterByGroup('inProduction')">
+        <div class="stat-label">In Production</div>
+        <div class="stat-value" id="statProduction"><span class="spinner"></span></div>
+      </div>
+      <div class="stat-card danger" id="cardLabels"
+          style="animation-delay:0.1s; cursor:pointer;" 
+          onclick="filterByGroup('needLabels')">
+        <div class="stat-label">Need Labels</div>
+        <div class="stat-value" id="statLabels">—</div>
+      </div>
+      <div class="stat-card info" id="cardTesting"
+          style="animation-delay:0.15s; cursor:pointer;" 
+          onclick="filterByGroup('readyForTesting')">
+        <div class="stat-label">Ready for Testing</div>
+        <div class="stat-value" id="statTesting">—</div>
+      </div>
+      <div class="stat-card" id="cardAwaiting"
+          style="animation-delay:0.2s; border-top:3px solid var(--blue); cursor:pointer;" 
+          onclick="filterByGroup('awaitingResults')">
+        <div class="stat-label">Awaiting Results</div>
+        <div class="stat-value" id="statAwaiting">—</div>
+      </div>
+      <div class="stat-card" style="animation-delay:0.25s">
+        <div class="stat-label">Unassigned Tags</div>
+        <div class="stat-value" id="statUnassigned">—</div>
+      </div>
+    </div>
+
+    <!-- Failed batch banner — only shown when count > 0 -->
+    <div id="failedBanner" style="display:none; background:#FFF1F2; border:1.5px solid var(--punch-red);
+      border-radius:8px; padding:12px 18px; margin-bottom:14px;
+      display:none; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:1.1rem;">⚠️</span>
+        <div>
+          <div style="font-family:var(--display); font-size:0.85rem; font-weight:800;
+            text-transform:uppercase; letter-spacing:0.04em; color:var(--punch-red);">
+            Failed Batches
+          </div>
+          <div id="failedBatchList" style="font-size:0.8rem; color:var(--text2); margin-top:2px;"></div>
+        </div>
+      </div>
+      <span id="failedCount" style="font-family:var(--display); font-size:1.8rem;
+        font-weight:900; color:var(--punch-red); line-height:1;">0</span>
+    </div>
+
+    <!-- ── TOOLBAR ──────────────────────────────────────────── -->
+    <div class="toolbar">
+      <div class="input-wrap">
+        <span class="input-icon">⌕</span>
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Search by product, batch ID, or METRC tag..."
+          autocomplete="off"
+        >
+      </div>
+
+      <select id="filterStatus" style="width:auto; min-width:160px;">
+        <option value="">All Statuses</option>
+      </select>
+
+      <select id="filterLab" style="width:auto; min-width:130px;">
+        <option value="">All Labs</option>
+      </select>
+
+      <label class="toggle-label">
+        <input type="checkbox" id="activeOnly" checked>
+        Active only
+      </label>
+    </div>
+
+    <!-- ── BATCH TABLE ──────────────────────────────────────── -->
+    <div class="table-wrap">
+      <div class="table-header">
+        <span>Product</span>
+        <span>Batch ID</span>
+        <span>Lab</span>
+        <span>Mfg Date</span>
+        <span>Status</span>
+        <span></span>
+      </div>
+      <div id="batchList">
+        <div class="loading">
+          <span class="spinner"></span> Loading batches...
+        </div>
+      </div>
+    </div>
+
+    <!-- Result count -->
+    <div class="result-count" id="resultCount"></div>
+
+  </main>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+  // ── STATE ───────────────────────────────────────────────────
+  let allBatches = [];
+  let searchTimeout = null;
+
+  // ── INIT ────────────────────────────────────────────────────
+  window.onload = function() {
+    loadDashboard();
+  };
+
+  function loadDashboard() {
+    google.script.run
+      .withSuccessHandler(onDashboardLoaded)
+      .withFailureHandler(onError)
+      .serverGetDashboard();
+  }
+
+  function onDashboardLoaded(result, retryCount) {
+    retryCount = retryCount || 0;
+    if (!result || !result.success) {
+      console.error('Dashboard error:', result ? result.error : 'null response');
+      if (retryCount < 2) {
+        setTimeout(function() {
+          google.script.run
+            .withSuccessHandler(function(r) { onDashboardLoaded(r, retryCount + 1); })
+            .withFailureHandler(function(e) { console.error('Retry failed:', e); })
+            .serverGetDashboard();
+        }, 2000);
+      }
+      return;
+    }
+
+    allBatches = result.batches || [];
+
+    // Populate stat cards
+    updateStats(result.stats, result.failedBatches);
+
+    // Populate filter dropdowns from server data
+    populateSelect("filterStatus", result.statuses, "All Statuses");
+    populateSelect("filterLab",    result.labs,     "All Labs");
+
+    // Render initial batch list — respects Active Only checkbox state
+    runFilters();
+
+    // Wire up search and filter events
+    document.getElementById("searchInput").addEventListener("input", onSearchInput);
+    document.getElementById("filterStatus").addEventListener("change", runFilters);
+    document.getElementById("filterLab").addEventListener("change", runFilters);
+    document.getElementById("activeOnly").addEventListener("change", runFilters);
+  }
+
+  // ── SEARCH & FILTER ─────────────────────────────────────────
+  function onSearchInput() {
+    // Debounce — wait 300ms after user stops typing before searching
+    // This avoids hammering the server on every keystroke
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(runSearch, 300);
+  }
+
+  function runSearch() {
+    const query = document.getElementById("searchInput").value.trim();
+
+    // If query is empty, just filter locally — faster
+    if (!query) {
+      runFilters();
+      return;
+    }
+
+    // For text search, call the server so it can search all fields
+    const filters = getActiveFilters();
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          renderBatches(result.batches);
+        }
+      })
+      .withFailureHandler(onError)
+      .serverSearch(query, filters);
+  }
+
+  function runFilters() {
+    activeGroup = null;
+    document.querySelectorAll('.stat-card').forEach(function(c) {
+      c.classList.remove('active-filter');
+    });
+
+    // Filter the already-loaded batch list locally
+    const filters = getActiveFilters();
+    let filtered = [...allBatches];
+
+    if (filters.status) {
+      filtered = filtered.filter(b =>
+        b.status.toLowerCase() === filters.status.toLowerCase()
+      );
+    }
+
+    if (filters.lab) {
+      filtered = filtered.filter(b =>
+        b.lab.toLowerCase() === filters.lab.toLowerCase()
+      );
+    }
+
+  
+
+    renderBatches(filtered);
+  }
+
+  function getActiveFilters() {
+    return {
+      status:     document.getElementById("filterStatus").value,
+      lab:        document.getElementById("filterLab").value,
+      activeOnly: document.getElementById("activeOnly").checked,
+    };
+  }
+
+  // ── RENDER ──────────────────────────────────────────────────
+  function renderBatches(batches) {
+    const list = document.getElementById("batchList");
+    const count = document.getElementById("resultCount");
+
+    if (!batches || batches.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">◇</div>
+          <p>No batches found. Try adjusting your search or filters.</p>
+        </div>`;
+      count.textContent = "";
+      return;
+    }
+
+    list.innerHTML = batches.map((b, i) => `
+      <div class="batch-row"
+           style="animation-delay:${Math.min(i * 0.03, 0.4)}s"
+           onclick="openBatch('${escHtml(b.metrcUID)}')">
+
+        <div>
+          <div class="product-name">${escHtml(b.item || "Unnamed Batch")}</div>
+          <div class="product-uid">${escHtml(b.metrcUID)}</div>
+        </div>
+
+        <div class="batch-id-cell">${escHtml(b.batchID || "—")}</div>
+
+        <div class="lab-cell">${escHtml(b.lab || "—")}</div>
+
+        <div class="date-cell">${escHtml(b.mfgDate || "—")}</div>
+
+        <div>${statusBadge(b.status)}</div>
+
+        <div class="row-arrow">→</div>
+
+      </div>
+    `).join("");
+
+    count.textContent = batches.length + " batch" + (batches.length !== 1 ? "es" : "");
+  }
+
+  function updateStats(stats, failedBatches) {
+    if (!stats) return;
+    setText("statProduction",  stats.inProduction   || 0);
+    setText("statLabels",      stats.needLabels      || 0);
+    setText("statTesting",     stats.readyForTesting || 0);
+    setText("statAwaiting",    stats.awaitingResults || 0);
+    setText("statUnassigned",  stats.unassignedUIDs  || 0);
+
+    // Failed banner
+    var failed = failedBatches || [];
+    var banner = document.getElementById("failedBanner");
+    if (failed.length > 0) {
+      banner.style.display = "flex";
+      setText("failedCount", failed.length);
+      document.getElementById("failedBatchList").textContent =
+        failed.map(function(b) { return b.batchID + " — " + b.item; }).join(" · ");
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  function statusBadge(status) {
+    if (!status) return '<span class="badge badge-default">—</span>';
+    var s = status.toLowerCase();
+    var cls = "badge-default";
+
+    if (["in production","ready for packaging","packaging complete","labels made","retail id"].some(function(v){ return s === v; })) {
+      cls = "badge-production";
+    } else if (["submitted for rnd","passed rnd"].some(function(v){ return s === v; })) {
+      cls = "badge-rnd";
+    } else if (s === "remake") {
+      cls = "badge-labels";
+    } else if (s === "need labels") {
+      cls = "badge-labels";
+    } else if (s === "compliance passed") {
+      cls = "badge-complete";
+    } else if (s === "ready for testing") {
+      cls = "badge-testing";
+    } else if (["submitted for compliance","delayed in testing","testing cancelled"].some(function(v){ return s === v; })) {
+      cls = "badge-testing";
+    } else if (s === "failed") {
+      cls = "badge-labels";
+    } else if (s.includes("distro") || s.includes("menu") || s.includes("passed")) {
+      cls = "badge-complete";
+    }
+
+    return '<span class="badge ' + cls + '"><span class="badge-dot"></span>' + escHtml(status) + '</span>';
+  }
+  
+  // ── NAVIGATION ───────────────────────────────────────────────
+  function openBatch(uid) {
+    navigate('batch', 'uid=' + encodeURIComponent(uid));
+  }
+
+  // ── HELPERS ──────────────────────────────────────────────────
+  function populateSelect(id, items, defaultLabel) {
+    const sel = document.getElementById(id);
+    if (!sel || !items) return;
+    const current = sel.value;
+    sel.innerHTML = `<option value="">${defaultLabel}</option>` +
+      items.map(v => `<option value="${escHtml(v)}" ${v === current ? "selected" : ""}>${escHtml(v)}</option>`).join("");
+  }
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value !== undefined ? value : "—";
+  }
+
+  function escHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function showToast(msg, type) {
+    const container = document.getElementById("toastContainer");
+    const toast = document.createElement("div");
+    toast.className = "toast " + (type || "info");
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+  function onError(err) {
+    showToast("Error: " + (err.message || err), "error");
+  }
+
+
+  // Group → status list mapping
+  var STAT_GROUPS = {
+    inProduction:    ['in production','ready for packaging','packaging complete',
+                      'submitted for rnd','passed rnd','remake'],
+    needLabels:      ['need labels','labels made'],
+    readyForTesting: ['ready for testing'],
+    awaitingResults: ['submitted for compliance','delayed in testing',
+                      'testing cancelled','compliance review'],
+  };
+
+  var activeGroup = null;
+
+  function filterByGroup(group) {
+    // Toggle off if same card clicked again
+    if (activeGroup === group) {
+      activeGroup = null;
+      // Clear card highlights
+      document.querySelectorAll('.stat-card').forEach(function(c) {
+        c.classList.remove('active-filter');
+      });
+      runFilters();
+      return;
+    }
+
+    activeGroup = group;
+
+    // Highlight active card, clear others
+    document.querySelectorAll('.stat-card').forEach(function(c) {
+      c.classList.remove('active-filter');
+    });
+    var cardMap = {
+      inProduction: 'cardProduction',
+      needLabels: 'cardLabels',
+      readyForTesting: 'cardTesting',
+      awaitingResults: 'cardAwaiting',
+    };
+    var card = document.getElementById(cardMap[group]);
+    if (card) card.classList.add('active-filter');
+
+    // Filter batch list
+    var statuses = STAT_GROUPS[group] || [];
+    var filtered = allBatches.filter(function(b) {
+      return statuses.includes((b.status || '').toLowerCase());
+    });
+    renderBatches(filtered);
+  } 
+
+</script>
+
+</body>
+</html>

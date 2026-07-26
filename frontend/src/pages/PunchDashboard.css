@@ -387,3 +387,207 @@
 .pd-status-option.selected { border-color: #C01020; background: #FFF1F2; }
 .pd-save-status { width: 100%; justify-content: center; }
 .pd-save-status:disabled { background: #C7D2DE; border-color: #C7D2DE; cursor: default; }
+
+/* ═══ Batch detail — two-column layout (matches GAS batch.html) ═══ */
+
+/* Dark hero band */
+.bd-hero {
+  background: #1A1D2E;
+  border-radius: 14px;
+  padding: 24px 26px;
+  margin-bottom: 18px;
+}
+.bd-hero-title {
+  color: #fff;
+  font-size: 1.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+}
+.bd-hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bd-chip {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #C3C9D9;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+/* Transient save flash */
+.bd-flash {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.bd-flash.ok  { color: #0A7A3E; background: #ECFDF3; border: 1px solid #A6E9C3; }
+.bd-flash.err { color: #C01020; background: #FFF1F2; border: 1px solid #F4B8BE; }
+
+/* Two-column grid: main + fixed sidebar */
+.bd-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 18px;
+  align-items: start;
+}
+.bd-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+/* Cards */
+.bd-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.bd-card-accent { border-top: 3px solid #C01020; }
+.bd-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #EFF1F5;
+}
+.bd-card-head h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #374151;
+}
+.bd-card-body { padding: 18px; }
+
+/* Created / Updated timestamps in the Batch Info header */
+.bd-timestamps { display: flex; gap: 18px; }
+.bd-timestamps > div { display: flex; flex-direction: column; }
+.bd-ts-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #9CA3AF;
+}
+.bd-ts-val { font-size: 0.78rem; color: #4B5563; font-weight: 600; }
+
+/* Field grid inside a card — two columns, span-2 for full width */
+.bd-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+}
+.bd-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bd-field.span-2 { grid-column: 1 / -1; }
+.bd-field-value { font-size: 0.92rem; color: #111827; font-weight: 600; }
+.bd-field-value.large { font-size: 1.05rem; font-weight: 800; }
+
+/* Status list forced to a single column in the narrow sidebar */
+.bd-status-list { grid-template-columns: 1fr; }
+
+/* Lab results extras */
+.bd-results-link {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1A56DB;
+  text-decoration: none;
+}
+.bd-empty-note { color: #9CA3AF; font-size: 0.82rem; margin: 12px 0 0; }
+
+/* MRID label box */
+.bd-label-box {
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  color: #111827;
+  background: #F9FAFB;
+  border: 1px solid #EFF1F5;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+/* Sidebar action buttons stack full-width */
+.bd-actions { display: flex; flex-direction: column; gap: 8px; }
+.bd-actions .pd-action-btn { justify-content: flex-start; }
+
+@media (max-width: 900px) {
+  .bd-grid { grid-template-columns: 1fr; }
+  .bd-fields { grid-template-columns: 1fr; }
+}
+
+/* Danger action button variant (used in modals) */
+.pd-action-btn.danger { background: #C01020; border-color: #C01020; color: #fff; }
+.pd-action-btn.danger:hover { background: #A00D1A; color: #fff; }
+.pd-action-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Testing action tiles (sidebar) */
+.bd-tiles { display: flex; flex-direction: column; gap: 8px; }
+.bd-action-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 10px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bd-action-tile:hover { border-color: #D1D5DB; }
+.bd-action-tile.primary { border-color: #FBD5D9; background: #FFF6F7; }
+.bd-action-tile.primary .bd-tile-title { color: #C01020; }
+.bd-action-tile.blue { border-color: #CFE0FB; background: #F5F9FF; }
+.bd-action-tile.blue .bd-tile-title { color: #1A56DB; }
+.bd-action-tile.danger { border-color: #F4B8BE; background: #FFF1F2; }
+.bd-action-tile.danger .bd-tile-title { color: #C01020; }
+.bd-tile-title { font-size: 0.86rem; font-weight: 800; color: #111827; }
+.bd-tile-desc { font-size: 0.74rem; color: #6B7280; }
+
+/* Modals */
+.bd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 23, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+.bd-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.bd-modal-title { margin: 0 0 6px; font-size: 1.2rem; font-weight: 800; color: #111827; }
+.bd-modal-desc { margin: 0 0 18px; font-size: 0.88rem; color: #4B5563; }
+.bd-modal-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.bd-modal-field label {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #6B7280;
+}
+.bd-modal-preview {
+  background: #F9FAFB;
+  border: 1.5px solid #EFF1F5;
+  border-radius: 8px;
+  padding: 14px;
+  margin: 4px 0 18px;
+}
+.bd-modal-preview-label {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #9CA3AF; margin-bottom: 5px;
+}
+.bd-modal-preview-val {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.9rem; font-weight: 600; color: #111827;
+}
+.bd-modal-preview-sub { margin-top: 5px; font-size: 0.76rem; color: #9CA3AF; }
+.bd-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
