@@ -59,6 +59,16 @@ window.fetch = (url, opts = {}) => {
   return _origFetch(url, opts);
 };
 
+// Fetch the full BPR record for a UID. Both the "already completed" and the
+// "exists but still in progress" branches need the identical pull, so it lives
+// in one helper instead of being copy-pasted. (The missing version of exactly
+// this function is what threw "loadFull is not defined" and blocked the app.)
+async function loadFull(uid) {
+  const res = await fetch(`${API_BASE}/bpr/${uid}`);
+  if (!res.ok) throw new Error("Failed to load batch record (" + res.status + ")");
+  return res.json();
+}
+
 // ── The original param-driven BPR flow, unchanged, as its own component ──
 function BPRFlow() {
   const [view, setView] = useState("loading"); // loading | form | complete | error
@@ -86,8 +96,7 @@ function BPRFlow() {
       const statusData = await statusRes.json();
 
       if (statusData.exists && statusData.status === "completed") {
-        const fullRes = await fetch(`${API_BASE}/bpr/${params.uid}`);
-        const fullData = await fullRes.json();
+        const fullData = await loadFull(statusData.uid);
         setBprData(fullData);
         setView("complete");
         return;
