@@ -21,7 +21,38 @@
 .pd-error { color: #DC2626; }
 
 /* ── Header ── */
-.pd-header { margin-bottom: 22px; }
+.pd-header {
+  margin-bottom: 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.pd-new-batch-btn {
+  flex-shrink: 0;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1A1D2E;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.06s;
+}
+.pd-new-batch-btn:hover { background: #2A2E45; }
+.pd-new-batch-btn:active { transform: translateY(1px); }
+@media (max-width: 640px) {
+  .pd-header { flex-direction: column; }
+  .pd-new-batch-btn { margin-top: 0; }
+}
 .pd-kicker {
   font-size: 0.8rem;
   font-weight: 600;
@@ -270,3 +301,89 @@
   color: #9CA3AF;
   margin: 4px 0 20px;
 }
+
+/* ── Editable batch-info + status cards (batch detail) ── */
+.pd-edit-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 16px 0;
+}
+.pd-edit-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6B7280;
+  margin-bottom: 14px;
+}
+.pd-save-msg { font-size: 0.75rem; font-weight: 700; text-transform: none; letter-spacing: 0; }
+.pd-save-msg.ok  { color: #0A7A3E; }
+.pd-save-msg.err { color: #C01020; }
+
+.pd-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.pd-edit-field { display: flex; flex-direction: column; gap: 5px; }
+.pd-edit-control { display: flex; gap: 6px; align-items: center; }
+.pd-edit-input {
+  flex: 1;
+  min-width: 0;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #111827;
+  background: #fff;
+}
+.pd-edit-input:focus { outline: none; border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+.pd-edit-save {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  background: #2563EB;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pd-edit-save:hover:not(:disabled) { background: #1D4ED8; }
+.pd-edit-save:disabled { background: #C7D2DE; cursor: default; }
+
+/* Status selector — vertical list of options, one selectable at a time */
+.pd-status-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.pd-status-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: #F9FAFB;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #374151;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pd-status-option:hover { border-color: #D1D5DB; }
+.pd-status-option.selected { border-color: #C01020; background: #FFF1F2; }
+.pd-save-status { width: 100%; justify-content: center; }
+.pd-save-status:disabled { background: #C7D2DE; border-color: #C7D2DE; cursor: default; }

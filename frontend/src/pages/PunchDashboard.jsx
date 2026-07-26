@@ -11,7 +11,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
 import "./PunchDashboard.css";
-import AppHeader from "./AppHeader";
+import AppHeader, { EXTERNAL_LINKS } from "./AppHeader";
 
 // ── Finished goods vs. everything else ─────────────────────────────────
 // Two different reasons a row shouldn't show up on the Batches dashboard:
@@ -72,17 +72,42 @@ const STAT_GROUPS = {
   awaitingResults: ["submitted for compliance", "delayed in testing", "testing cancelled"],
 };
 
-// Status family → dot color, driven off the same STAT_GROUPS above so
-// the table's pill colors stay in sync with the stat-card buckets rather
-// than drifting via a second, separately-maintained list of strings.
-export function statusDotClass(status) {
-  const s = (status || "").toLowerCase().trim();
-  if (STAT_GROUPS.inProduction.includes(s)) return "dot-orange";
-  if (STAT_GROUPS.needLabels.includes(s)) return "dot-red";
-  if (STAT_GROUPS.readyForTesting.includes(s)) return "dot-blue";
-  if (STAT_GROUPS.awaitingResults.includes(s)) return "dot-purple";
-  if (s === "failed") return "dot-red";
-  return "dot-gray"; // complete/archived/avail-in-distro and anything unmapped
+// Exact per-status colors — ported verbatim from GAS batch.html's
+// STATUS_COLORS map (the source of truth behind the batch-detail status
+// selector). Using the per-status hex, NOT the old 5-family grouping, is
+// deliberate: the family version colored "submitted for rnd" orange and
+// "labels made" red, which disagreed with the batch page. Anything not in
+// this map falls back to gray — same as GAS (STATUS_COLORS[s] || "#8890A8").
+const STATUS_COLORS = {
+  "in production":                  "#B45309",
+  "ready for packaging":            "#B45309",
+  "packaging complete":             "#B45309",
+  "submitted for rnd":              "#6D28D9",
+  "passed rnd":                     "#6D28D9",
+  "remake":                         "#C01020",
+  "need labels":                    "#C01020",
+  "labels made":                    "#B45309",
+  "ready for testing":              "#1A56DB",
+  "submitted for compliance":       "#1A56DB",
+  "delayed in testing":             "#C01020",
+  "testing cancelled":              "#C01020",
+  "failed":                         "#C01020",
+  "passed but not avail in distru": "#0A7A3E",
+  "avail in distru/on menu":        "#0A7A3E",
+};
+const STATUS_GRAY = "#8890A8";
+
+// Solid color for a status (dot fill + text). Gray fallback matches GAS.
+export function statusColor(status) {
+  return STATUS_COLORS[(status || "").toLowerCase().trim()] || STATUS_GRAY;
+}
+
+// Inline style for a status pill: colored text on a light tint of the same
+// hue. The 2-digit alpha suffixes (1A ≈ 10%, 33 ≈ 20%) make the tint/border
+// from whatever the status color is, so a new status never needs new CSS.
+export function statusPillStyle(status) {
+  const c = statusColor(status);
+  return { color: c, background: c + "1A", border: `1px solid ${c}33` };
 }
 
 export default function PunchDashboard() {
@@ -179,9 +204,17 @@ export default function PunchDashboard() {
       <AppHeader />
       <div className="pd-shell">
         <div className="pd-header">
-          <div className="pd-kicker">BatchD · Punch Tools</div>
-          <h1 className="pd-title">Batch Dashboard</h1>
-          <div className="pd-subtitle">UID Tracker — Punch Edibles &amp; Extracts</div>
+          <div className="pd-header-text">
+            <div className="pd-kicker">BatchD · Punch Tools</div>
+            <h1 className="pd-title">Batch Dashboard</h1>
+            <div className="pd-subtitle">UID Tracker — Punch Edibles &amp; Extracts</div>
+          </div>
+          {/* Links to the GAS create page for now — batch creation isn't
+              migrated to React yet (see EXTERNAL_LINKS.newBatch). */}
+          <a className="pd-new-batch-btn" href={EXTERNAL_LINKS.newBatch}
+             target="_blank" rel="noreferrer">
+            + New Batch
+          </a>
         </div>
 
         <div className="pd-stats">
@@ -265,8 +298,8 @@ export default function PunchDashboard() {
                   <td className="pd-dim">{b.lab || "—"}</td>
                   <td className="pd-dim">{b.mfgDate || "—"}</td>
                   <td>
-                    <span className={`pd-status-pill ${statusDotClass(b.status)}`}>
-                      <span className="pd-status-dot" />
+                    <span className="pd-status-pill" style={statusPillStyle(b.status)}>
+                      <span className="pd-status-dot" style={{ background: statusColor(b.status) }} />
                       {b.status || "—"}
                     </span>
                   </td>

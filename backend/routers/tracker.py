@@ -7,18 +7,26 @@ shape its google.script.run counterpart returned, so rewriting the
 frontend is a matter of swapping HOW it calls (fetch vs google.script.run)
 without rewriting what it does with the response.
 
-This first slice is READ-ONLY on purpose:
-  GET /tracker/dashboard   <- serverGetDashboard
-  GET /tracker/batch/{uid} <- serverGetBatch
-  GET /tracker/search      <- serverSearch
+Reads:
+  GET   /tracker/dashboard   <- serverGetDashboard
+  GET   /tracker/batch/{uid} <- serverGetBatch
+  GET   /tracker/search      <- serverSearch
 
-Writes (status updates, batch creation, imports) come in a later pass,
-once the read path is proven end-to-end against the real dashboard.
+Writes (this file's first write endpoint):
+  PATCH /tracker/batch/{uid} <- serverUpdateBatchInfo / serverUpdateLab
+                                (direct sheet writes) + serverUpdateStatus
+                                (routed through the GAS webhook so its side
+                                effects still run — see _gas_set_batch_status).
+
+Still on GAS: batch creation and tag imports.
 """
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+import httpx
 
 from auth import get_current_user
 from sheets_client import get_sheets_client, INACTIVE_STATUSES
@@ -300,6 +308,102 @@ def search(
         batches.reverse()
 
         return {"success": True, "batches": batches, "count": len(batches)}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── WRITE PATH — batch-detail editable fields ──────────────────────────────
+# First write endpoint in this file. Field edits (lab/target_qty/quantity/
+# mfg_date) write straight to UID_TRACKER; a status change routes through the
+# GAS webhook so updateBatchStatus's side effects still run (see the note on
+# the status branch below). Every field is optional — the frontend sends only
+# what changed, so a lab-only save doesn't touch quantity, etc.
+
+class BatchUpdate(BaseModel):
+    status: Optional[str] = None
+    lab: Optional[str] = None
+    target_qty: Optional[str] = None
+    quantity: Optional[str] = None
+    mfg_date: Optional[str] = None
+
+
+async def _gas_set_batch_status(uid: str, status: str) -> dict:
+    """
+    POSTs to the GAS webhook to change a batch's STATUS via updateBatchStatus,
+    which preserves its GAS-side side effects (cache-bust, and syncUIDToDistroLog
+    where it runs). Returns GAS's JSON result, or an {success: false, error}
+    dict if the webhook is unreachable / returns non-JSON. Carries the shared
+    secret so it clears the doPost gate.
+    """
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
+        return {"success": False, "error": "GAS_WEBHOOK_URL not configured"}
+
+    payload = {
+        "action": "setBatchStatus",
+        "uid":    uid,
+        "status": status,
+        "secret": os.environ.get("GAS_SHARED_SECRET", ""),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.post(webhook_url, json=payload)
+            try:
+                return resp.json()
+            except Exception:
+                return {
+                    "success": False,
+                    "error": f"GAS returned non-JSON ({resp.status_code}): {resp.text[:200]}",
+                }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.patch("/batch/{uid}")
+async def update_batch(
+    uid: str,
+    body: BatchUpdate,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Port of the batch-detail edits (serverUpdateBatchInfo / serverUpdateLab /
+    serverUpdateStatus). Returns the same {success, batch} shape get_batch
+    does, so the frontend can drop the fresh batch straight back into state.
+    """
+    try:
+        client = get_sheets_client()
+
+        # ── Plain field edits — direct sheet write, no side effects ──
+        field_updates = {
+            k: v for k, v in {
+                "lab":        body.lab,
+                "target_qty": body.target_qty,
+                "quantity":   body.quantity,
+                "mfg_date":   body.mfg_date,
+            }.items() if v is not None
+        }
+        if field_updates:
+            if not client.update_batch_fields(uid, field_updates):
+                return {"success": False, "error": f"Batch not found: {uid}"}
+
+        # ── Status change — routed through GAS (per the side-effect note) ──
+        if body.status is not None:
+            if body.status not in STATUS_LIST:
+                return {"success": False, "error": f"Invalid status: {body.status}"}
+            gas_result = await _gas_set_batch_status(uid, body.status)
+            if not gas_result.get("success"):
+                return {
+                    "success": False,
+                    "error": gas_result.get("error", "GAS status update failed"),
+                }
+
+        # Read back the row so the client re-renders from the source of truth
+        # (GAS wrote the status synchronously above, so it's already reflected).
+        batch = client.get_batch_by_uid(uid)
+        if not batch:
+            return {"success": False, "error": f"Batch not found: {uid}"}
+        return {"success": True, "batch": batch}
 
     except Exception as e:
         return {"success": False, "error": str(e)}

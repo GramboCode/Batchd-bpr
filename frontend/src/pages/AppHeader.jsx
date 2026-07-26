@@ -12,6 +12,11 @@ import "./AppHeader.css";
 export const EXTERNAL_LINKS = {
   // GAS wash page (New Wash Batch) — paste the /exec URL:
   newWashBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=wash",
+  // GAS create page (New Batch) — same deployment, ?page=create. Batch
+  // creation isn't migrated to React yet (heavy GAS logic: template clone,
+  // UID assignment, folder creation), so this links out for now — same
+  // pattern as newWashBatch until /create grows a native React flow.
+  newBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=create",
   // GAS Punch Tools batch dashboard — paste the /exec URL:
   punchTools: "https://script.google.com/macros/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec",
 };

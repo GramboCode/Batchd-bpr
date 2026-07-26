@@ -64,6 +64,18 @@ COL = {
     "BPR_PDF_URL": 37,
 }
 
+# Fields the batch-detail page can edit with a plain cell write — no GAS-side
+# side effects. STATUS is intentionally excluded (routed through the GAS
+# webhook instead, so updateBatchStatus's syncUIDToDistroLog + cache-bust run).
+# "quantity" is the final/confirmed qty; "target_qty" is the goal set at
+# creation — same two columns createBatch writes on the GAS side.
+_EDITABLE_FIELD_COLS = {
+    "target_qty": COL["TARGET_QTY"],
+    "quantity":   COL["QUANTITY"],
+    "mfg_date":   COL["MFG_DATE"],
+    "lab":        COL["LAB"],
+}
+
 # Statuses that drop a batch off the "active" dashboard view — mirrors
 # the SKIP_STATUSES list in Batches.gs's getAllBatches().
 INACTIVE_STATUSES = {
@@ -453,6 +465,45 @@ class SheetsClient:
             templates[key] = template
 
         return templates
+
+    def update_batch_fields(self, uid: str, updates: dict) -> bool:
+        """
+        Writes a subset of editable tracker fields for one batch, plus
+        LAST_UPDATED, in a single batchUpdate. Mirrors GAS's
+        serverUpdateBatchInfo / serverUpdateLab.
+
+        Only the columns in _EDITABLE_FIELD_COLS are writable here — STATUS
+        is deliberately NOT among them, because status changes route through
+        the GAS webhook so updateBatchStatus's side effects (syncUIDToDistroLog
+        + cache-bust) still run. Unknown keys are ignored.
+
+        Returns False if the UID isn't found or nothing writable was supplied.
+        """
+        batch = self.get_batch_by_uid(uid)
+        if not batch:
+            return False
+
+        row = batch["rowIndex"]
+        data = []
+        for key, value in updates.items():
+            col = _EDITABLE_FIELD_COLS.get(key)
+            if col is None:
+                continue  # not a directly-writable field — skip silently
+            letter = self._col_letter(col)
+            data.append({"range": f"{TRACKER_TAB}!{letter}{row}", "values": [[value]]})
+
+        if not data:
+            return False  # payload had no writable fields
+
+        updated_col = self._col_letter(COL["LAST_UPDATED"])
+        now = datetime.utcnow().isoformat()
+        data.append({"range": f"{TRACKER_TAB}!{updated_col}{row}", "values": [[now]]})
+
+        self._sheet.values().batchUpdate(
+            spreadsheetId=TRACKER_SS_ID,
+            body={"valueInputOption": "USER_ENTERED", "data": data},
+        ).execute()
+        return True
 
     def update_status(self, uid: str, status: str) -> bool:
         """Port of updateBatchStatus. Writes STATUS + LAST_UPDATED cols."""
