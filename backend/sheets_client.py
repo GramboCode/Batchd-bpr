@@ -8,6 +8,7 @@ Config.gs itself.
 """
 
 import json
+import re
 from datetime import datetime
 
 from google.oauth2 import service_account
@@ -79,6 +80,17 @@ INACTIVE_STATUSES = {
 # (flavors, formats, tiers, defaults — whatever varies by product type)
 # packed into a JSON blob in the last column.
 PRODUCT_CATALOG_TAB = "Product Catalog"
+
+# Batch IDs are split into "everything before the trailing digits" and
+# "the trailing digits themselves" — e.g. "TCAVSTRBTZ005" -> prefix
+# "TCAVSTRBTZ", suffix "005", but just as validly "HASH-ALIENO-0724-02"
+# -> prefix "HASH-ALIENO-0724-", suffix "02". Non-greedy .*? is what
+# makes this find the LONGEST trailing run of digits rather than
+# stopping at the first digit it sees. Matches getNextBatchID's real
+# regex exactly (confirmed against WebApp.gs) — an earlier version of
+# this file used an alpha-only prefix pattern that silently failed on
+# any hyphenated batch ID.
+_BATCH_ID_SPLIT = re.compile(r"^(.*?)(\d+)$")
 
 
 class SheetsClient:
@@ -238,6 +250,132 @@ class SheetsClient:
             if b["metrcUID"].strip().lower() == target:
                 return b
         return None
+
+    def get_batch_by_batch_id(self, batch_id: str) -> dict | None:
+        """Direct port of getBatchByBatchID."""
+        target = (batch_id or "").strip().lower()
+        if not target:
+            return None
+        for b in self.get_batches():
+            if b["batchID"].strip().lower() == target:
+                return b
+        return None
+
+    def _get_next_batch_id(self, batch_id: str, existing_ids: set[str]) -> str | None:
+        """
+        Direct port of getNextBatchID. Splits into prefix + numeric
+        suffix, then increments — checking against every existing batch
+        ID, not just the ones matching this prefix — so a gap from an
+        out-of-sequence batch doesn't get suggested as if it were free.
+        Gives up after 50 attempts (same cap as the original) rather
+        than looping forever if something's gone very wrong with the ID
+        sequence.
+        """
+        m = _BATCH_ID_SPLIT.match(batch_id)
+        if not m:
+            return None
+
+        prefix, num_str = m.group(1), m.group(2)
+        pad_len = len(num_str)
+        num = int(num_str)
+
+        for _ in range(50):
+            num += 1
+            candidate = f"{prefix}{str(num).zfill(pad_len)}"
+            if candidate not in existing_ids:
+                return candidate
+        return None
+
+    def search_batch_prefix(self, typed: str) -> list[dict]:
+        """
+        Port of serverSearchBatchPrefix (confirmed against WebApp.gs).
+        Filters every batch whose ID STARTS WITH what's been typed so
+        far (against the whole ID, not just an alpha-only portion —
+        an earlier version of this file matched incorrectly here),
+        then groups those matches by their alpha-prefix (everything
+        before the trailing digit run) and keeps the highest-numbered
+        one per group. Suggestions are computed against the FULL set of
+        every batch ID in the sheet, not just the matches, since a
+        collision could exist under the same prefix but outside the
+        typed-so-far filter. Capped at 8 results, matching the original.
+        """
+        typed = (typed or "").strip().upper()
+        if len(typed) < 3:
+            return []
+
+        all_batches = self.get_batches()
+        all_batch_ids = {
+            (b["batchID"] or "").strip().upper()
+            for b in all_batches
+            if b["batchID"]
+        }
+
+        groups: dict[str, dict] = {}
+        for b in all_batches:
+            batch_id = (b["batchID"] or "").strip().upper()
+            if not batch_id.startswith(typed):
+                continue
+
+            m = _BATCH_ID_SPLIT.match(batch_id)
+            if not m:
+                continue
+            alpha, digits = m.group(1), m.group(2)
+            num = int(digits)
+
+            existing = groups.get(alpha)
+            if existing is None or num > existing["latest_num"]:
+                groups[alpha] = {
+                    "latest_num": num,
+                    "latest_id": batch_id,
+                    "item": b["item"],
+                    "status": b["status"],
+                }
+
+        matches = []
+        for alpha in sorted(groups.keys()):
+            g = groups[alpha]
+            matches.append({
+                "alphaPrefix": alpha,
+                "item": g["item"],
+                "latestBatchID": g["latest_id"],
+                "nextBatchID": self._get_next_batch_id(g["latest_id"], all_batch_ids),
+                "status": g["status"],
+            })
+        return matches[:8]
+
+    def check_batch_id_availability(self, batch_id: str) -> dict:
+        """
+        Port of serverCheckBatchID (confirmed against WebApp.gs). The
+        original checks the exact typed ID against every existing batch
+        ID directly (not just prefix matches), then — only if taken —
+        computes a suggestion via the same getNextBatchID logic search_
+        batch_prefix uses, seeded against the FULL set of batch IDs.
+        """
+        batch_id = (batch_id or "").strip().upper()
+        if len(batch_id) < 3:
+            return {"available": None, "assignedTo": None, "suggestion": None}
+
+        all_batches = self.get_batches()
+        existing = next(
+            (b for b in all_batches if (b["batchID"] or "").strip().upper() == batch_id),
+            None,
+        )
+
+        if not existing:
+            return {"available": True, "assignedTo": None, "suggestion": None}
+
+        all_batch_ids = {
+            (b["batchID"] or "").strip().upper()
+            for b in all_batches
+            if b["batchID"]
+        }
+        suggestion = self._get_next_batch_id(batch_id, all_batch_ids)
+
+        return {
+            "available": False,
+            "assignedTo": existing["item"] or "Unknown item",
+            "suggestion": suggestion,
+        }
 
     def get_next_available_uid(self) -> dict | None:
         """

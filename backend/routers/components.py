@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from db import get_db
-from utils import now_utc, fmt_ts
+from utils import now_utc, fmt_ts, _post_wash_gas
 
 router = APIRouter(tags=["components"])
 

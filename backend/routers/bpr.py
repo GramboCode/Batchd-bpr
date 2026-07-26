@@ -24,7 +24,7 @@ from pydantic import BaseModel
 import httpx
 
 from db import get_db
-from utils import now_utc, fmt_ts
+from utils import now_utc, fmt_ts, _post_wash_gas
 from bpr_phases import BPR_PHASES, detect_product_family
 
 router = APIRouter(tags=["bpr"])
@@ -1068,19 +1068,10 @@ def _get_wash_sheet_url(lot_code: str) -> Optional[str]:
         conn.close()
 
 
-async def _post_wash_gas(payload: dict, label: str):
-    """Shared fire-and-forget POST to the GAS webhook."""
-    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
-    if not webhook_url:
-        print(f"{label}: no GAS_WEBHOOK_URL — skipping")
-        return
-    payload["secret"] = os.environ.get("GAS_SHARED_SECRET", "")   # auth for doPost guard
-    try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            resp = await client.post(webhook_url, json=payload)
-            print(f"{label}: {resp.status_code} — {resp.text[:200]}")
-    except Exception as e:
-        print(f"{label} failed (non-fatal): {e}")
+# _post_wash_gas moved to utils.py — it's shared by both this router and
+# components.py, and centralizing it there makes the shared-secret injection
+# a single chokepoint (see utils.py for the full rationale). Imported at the
+# top of this file now instead of defined inline.
 
 
 def _wash_block_stats(lot_code: str, phase_id: str):

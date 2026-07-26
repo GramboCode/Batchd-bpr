@@ -166,6 +166,41 @@ def get_batch(uid: str, user: dict = Depends(get_current_user)):
         return {"success": False, "error": str(e)}
 
 
+@router.get("/check-batch-id")
+def check_batch_id(
+    batch_id: str = Query(..., alias="batchId"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Port of serverCheckBatchID (confirmed against WebApp.gs). Returns the
+    {available, assignedTo, suggestion} shape renderBatchIDStatus()
+    expects — all three keys always present, null where GAS's version
+    would also send null.
+    """
+    try:
+        client = get_sheets_client()
+        return client.check_batch_id_availability(batch_id)
+    except Exception as e:
+        return {"available": None, "assignedTo": None, "suggestion": None, "error": str(e)}
+
+
+@router.get("/search-batch-prefix")
+def search_batch_prefix(
+    prefix: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Port of serverSearchBatchPrefix (confirmed against WebApp.gs).
+    Returns the {matches: [...]} shape renderPrefixDropdown() expects.
+    """
+    try:
+        client = get_sheets_client()
+        matches = client.search_batch_prefix(prefix)
+        return {"matches": matches}
+    except Exception as e:
+        return {"matches": [], "error": str(e)}
+
+
 @router.get("/next-uid")
 def get_next_uid(user: dict = Depends(get_current_user)):
     """
