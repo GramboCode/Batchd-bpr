@@ -26,6 +26,16 @@ import httpx
 from db import get_db
 from utils import now_utc, fmt_ts, _post_wash_gas
 from bpr_phases import BPR_PHASES, detect_product_family
+# Component ledger helpers — reused so a BPR consuming a component lot decrements
+# inventory through the exact same ledger path the components router uses.
+# (components.py does NOT import bpr, so this import introduces no cycle.)
+from routers.components import (
+    get_lot as _get_component_lot,
+    lot_balance as _lot_balance,
+    add_transaction as _add_transaction,
+    get_component_type as _get_component_type,
+    workflow_keys as _workflow_keys,
+)
 
 router = APIRouter(tags=["bpr"])
 
@@ -54,6 +64,11 @@ class PhaseSignoffRequest(BaseModel):
     employee_name: str
     notes: Optional[str] = None
     ccp_values: Optional[dict] = None
+
+class ConsumeComponentRequest(BaseModel):
+    lot_code: str
+    weight_g: float
+    recorded_by: Optional[str] = None
 
 class SupervisorReleaseRequest(BaseModel):
     supervisor_name: str
@@ -201,6 +216,15 @@ def get_bpr(uid: str, metrc_uid: Optional[str] = Query(None)):
             family = record["product_family"]
             definition = BPR_PHASES.get(family, {})
 
+            # Component consumption: which component type (if any) this family
+            # draws down, plus whatever lots have already been recorded.
+            consumes_component = FAMILY_CONSUMES_COMPONENT.get(family)
+            cur.execute(
+                "SELECT * FROM bpr_component_consumption WHERE bpr_uid = %s ORDER BY created_at",
+                (ruid,)
+            )
+            consumed_components = [dict(r) for r in cur.fetchall()]
+
             signoff_map = {s["phase_id"]: s for s in signoffs}
 
             step_map = {}
@@ -217,10 +241,184 @@ def get_bpr(uid: str, metrc_uid: Optional[str] = Query(None)):
                 "signoffs": signoff_map,
                 "steps": step_map,
                 "phases": definition,
-                "family": family
+                "family": family,
+                "consumes_component": consumes_component,
+                "consumed_components": consumed_components,
             }
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# COMPONENT CONSUMPTION — a product BPR draws down a component lot
+# (nano isolate, ice water hash) and records it as a Section 2 cannabis input.
+# Mirror of the wash→press handoff, generalized to any component type.
+# ─────────────────────────────────────────────────────────────────────────
+
+async def _push_cann_row_to_gas(uid: str, family: str, section_row: int,
+                                 lot: dict, weight_g: float, recorded_by: str):
+    """
+    Best-effort: write a consumed component lot into the BPR sheet's Section 2
+    cannabis table (rows 1-7). Uses the same writeBPRFieldsByCellMap action the
+    phase write-back uses. Non-fatal — the DB ledger is the source of truth; a
+    sheet hiccup must never block the inventory decrement that already committed.
+    """
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    template_key = PRODUCT_FAMILY_TO_TEMPLATE_KEY.get(family)
+    if not webhook_url or not template_key or not section_row:
+        return
+    i = section_row
+    fields = {
+        f"CANN{i}_LOTCOA":    lot.get("coa_ref") or lot.get("lot_code"),
+        f"CANN{i}_UID":       lot.get("metrc_uid") or lot.get("lot_code"),
+        f"CANN{i}_ACTUALQTY": weight_g,
+        f"CANN{i}_WEIGHEDBY": recorded_by or "",
+        f"CANN{i}_TIME":      (fmt_ts(now_utc()) or "")[-8:],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.post(webhook_url, json={
+                "action":      "writeBPRFieldsByCellMap",
+                "uid":         uid,
+                "templateKey": template_key,
+                "fields":      fields,
+                "secret":      os.environ.get("GAS_SHARED_SECRET", ""),
+            })
+            print(f"GAS CANN-row write-back: {resp.status_code} — {resp.text[:160]}")
+    except Exception as e:
+        print(f"GAS CANN-row write-back failed (non-fatal): {e}")
+
+
+@router.post("/bpr/{uid}/consume-component")
+async def consume_component(uid: str, req: ConsumeComponentRequest):
+    """
+    Record that this BPR consumed `weight_g` of component lot `lot_code`:
+      1. decrement the lot via a consumption ledger txn (auto-deplete at zero),
+      2. store the BPR↔lot link (with the Section 2 row it occupies),
+      3. best-effort mirror it into the sheet's Section 2 cannabis table.
+    Rejects over-draw and lots that aren't available.
+    """
+    if req.weight_g <= 0:
+        raise HTTPException(400, "weight_g must be positive")
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            bpr = find_existing_bpr(cur, uid)   # resolves lot code OR metrc tag
+            if not bpr:
+                raise HTTPException(404, "BPR not found")
+            bpr = dict(bpr)
+            uid = bpr["uid"]                     # pin child rows to the resolved uid
+            family = bpr["product_family"]
+
+            lot = _get_component_lot(cur, req.lot_code)  # 404s if missing
+            expected = FAMILY_CONSUMES_COMPONENT.get(family)
+            if expected and lot["component_type"] != expected:
+                raise HTTPException(
+                    400,
+                    f"{family} consumes {expected} lots, but {req.lot_code} "
+                    f"is {lot['component_type']}."
+                )
+
+            balance = _lot_balance(cur, lot["id"])
+            if req.weight_g > balance:
+                raise HTTPException(
+                    400,
+                    f"Only {balance} {lot['unit']} remain in {req.lot_code}; "
+                    f"cannot consume {req.weight_g}."
+                )
+
+            # 1. Ledger decrement (mirrors POST /components/{lot}/transactions)
+            txn = _add_transaction(
+                cur, lot, "consumption", -abs(req.weight_g),
+                reference_type="bpr", reference_id=uid,
+                note=bpr.get("product_name"), performed_by=req.recorded_by,
+            )
+            new_balance = _lot_balance(cur, lot["id"])
+            if new_balance <= 0 and "depleted" in _workflow_keys(
+                    _get_component_type(cur, lot["component_type"])):
+                cur.execute(
+                    "UPDATE bpr_component_lots SET status='depleted', updated_at=NOW() WHERE id=%s",
+                    (lot["id"],)
+                )
+
+            # 2. Next free Section 2 row (1-7) for this BPR
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM bpr_component_consumption WHERE bpr_uid = %s",
+                (uid,)
+            )
+            section_row = int(cur.fetchone()["n"]) + 1
+
+            cur.execute("""
+                INSERT INTO bpr_component_consumption
+                    (bpr_uid, lot_code, component_type, weight_g, unit,
+                     section_row, txn_id, recorded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (
+                uid, lot["lot_code"], lot["component_type"], abs(req.weight_g),
+                lot["unit"], section_row, txn["id"], req.recorded_by,
+            ))
+            consumption = dict(cur.fetchone())
+        conn.commit()
+
+        # 3. Sheet mirror — after commit, best-effort, never blocks the decrement
+        if section_row <= 7:
+            await _push_cann_row_to_gas(uid, family, section_row, lot,
+                                        abs(req.weight_g), req.recorded_by)
+
+        return {
+            "consumption": consumption,
+            "lot_code": lot["lot_code"],
+            "remaining_qty": new_balance,
+            "unit": lot["unit"],
+        }
+    finally:
+        conn.close()
+
+
+@router.delete("/bpr/{uid}/consume-component/{consumption_id}")
+def undo_consume_component(uid: str, consumption_id: str):
+    """
+    Reverse a mistaken consumption: append an offsetting adjustment txn (which
+    restores the lot balance and un-depletes it) and delete the link row. The
+    sheet's Section 2 cell isn't auto-cleared — an operator correction there is
+    rare and safer done by hand than by blanking cells programmatically.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM bpr_component_consumption WHERE id = %s AND bpr_uid = %s",
+                (consumption_id, uid)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Consumption record not found")
+            row = dict(row)
+
+            lot = _get_component_lot(cur, row["lot_code"])
+            # Offsetting adjustment puts the weight back on the ledger
+            _add_transaction(
+                cur, lot, "adjustment", abs(float(row["weight_g"])),
+                reference_type="bpr_undo", reference_id=uid,
+                note=f"Reversed consumption {consumption_id}",
+            )
+            # If the lot had auto-depleted, restore it to available now that it
+            # carries balance again.
+            new_balance = _lot_balance(cur, lot["id"])
+            if lot["status"] == "depleted" and new_balance > 0:
+                cur.execute(
+                    "UPDATE bpr_component_lots SET status='available', updated_at=NOW() WHERE id=%s",
+                    (lot["id"],)
+                )
+
+            cur.execute("DELETE FROM bpr_component_consumption WHERE id = %s", (consumption_id,))
+        conn.commit()
+        return {"success": True, "lot_code": row["lot_code"], "restored_qty": new_balance}
+    finally:
+        conn.close()
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # POST /bpr/{uid}/step
@@ -867,6 +1065,19 @@ PRODUCT_FAMILY_TO_TEMPLATE_KEY = {
     # "rosin_wash" stays on its own dedicated pathway (push_wash_phase_to_gas)
     # ⚠ liquidabs/nano_isolate cell maps assume Section 6 steps start at the
     # standard row 71 — verify against the real tabs (smoke test) before trusting.
+}
+
+# ── Product family → component type it draws down as a Section 2 input ──────
+# A NANO SKU BPR consumes a nano_isolate lot exactly the way a rosin press
+# consumes an ice_water_hash lot: the operator picks an available lot from
+# inventory at the start of the run, records the weight, and that weight is
+# both written into the BPR's Section 2 cannabis table AND decremented from the
+# component lot's ledger. Families absent from this map show no picker.
+FAMILY_CONSUMES_COMPONENT = {
+    "rosin_press":          "ice_water_hash",   # live rosin pressed from wash
+    "rosin_rocket":         "ice_water_hash",
+    "dr_norms_cookie_nano": "nano_isolate",     # NANO cookie SKU
+    "liquidabs":            "nano_isolate",      # nano tincture
 }
 
 # ── GUMMIES: phase → BPR write-back mapping (BPR-GUM-001 v2.0, 18-step) ──

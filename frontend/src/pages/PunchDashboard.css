@@ -34,7 +34,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #1A1D2E;
+  background: #E8192C;   /* Punch red */
   color: #fff;
   font-weight: 800;
   font-size: 0.9rem;
@@ -47,7 +47,7 @@
   cursor: pointer;
   transition: background 0.12s, transform 0.06s;
 }
-.pd-new-batch-btn:hover { background: #2A2E45; }
+.pd-new-batch-btn:hover { background: #C01020; }
 .pd-new-batch-btn:active { transform: translateY(1px); }
 @media (max-width: 640px) {
   .pd-header { flex-direction: column; }

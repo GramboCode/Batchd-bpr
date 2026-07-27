@@ -1,0 +1,115 @@
+/* ComponentInputPanel.css — Section 2 cannabis-input picker in the BPR flow. */
+
+.cip {
+  background: #fff;
+  border: 1.5px solid #E2E6EF;
+  border-left: 4px solid #E8192C;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.cip-head { margin-bottom: 14px; }
+.cip-kicker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #E8192C;
+}
+.cip-title {
+  margin: 3px 0 0;
+  font-size: 1.15rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: #1A1D2E;
+}
+.cip-sub { margin: 5px 0 0; font-size: 0.85rem; color: #6A7089; }
+
+/* Recorded chips */
+.cip-recorded { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.cip-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #D1FAE5;
+  border: 1px solid #A7F3D0;
+  border-radius: 999px;
+  padding: 5px 6px 5px 12px;
+  font-size: 0.82rem;
+}
+.cip-chip-lot { font-weight: 800; font-family: 'JetBrains Mono', ui-monospace, monospace; color: #065F46; }
+.cip-chip-wt  { font-weight: 700; color: #0A7A3E; }
+.cip-chip-x {
+  width: 20px; height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: #0A7A3E;
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.cip-chip-x:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Picker row */
+.cip-picker { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.cip-field { display: flex; flex-direction: column; gap: 5px; }
+.cip-grow { flex: 1 1 240px; min-width: 0; }
+.cip-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4A5068;
+}
+.cip-input {
+  border: 1.5px solid #D0D5E3;
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #1A1D2E;
+  background: #fff;
+}
+.cip-input:focus { outline: none; border-color: #E8192C; }
+.cip-input:disabled { background: #F4F6FA; color: #A8AEC0; }
+.cip-wt { width: 100px; }
+
+.cip-record {
+  background: #E8192C;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 800;
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.cip-record:hover:not(:disabled) { background: #C01020; }
+.cip-record:disabled { background: #E8A0A8; cursor: not-allowed; }
+
+.cip-hint { margin-top: 10px; font-size: 0.8rem; color: #6A7089; }
+.cip-hint b { color: #1A1D2E; }
+
+.cip-error {
+  margin-top: 10px;
+  background: #FEE2E2;
+  border: 1.5px solid #FCA5A5;
+  color: #B91C1C;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  .cip-picker { flex-direction: column; align-items: stretch; }
+  .cip-wt { width: 100%; }
+  .cip-record { width: 100%; }
+}

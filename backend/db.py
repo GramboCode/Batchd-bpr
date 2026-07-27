@@ -108,6 +108,10 @@ INSERT INTO bpr_component_types
 VALUES
     ('ice_water_hash', 'Ice Water Hash', 'HASH', TRUE, 'rosin_wash', 'washing',
      '[{"key":"washing","label":"Ice Extraction"},{"key":"drying","label":"Freeze Drying"},{"key":"sifting","label":"Sifting"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('solventless_hash', 'Solventless Hash', 'SOLV', TRUE, 'solventless_hash', 'in_production',
+     '[{"key":"in_production","label":"In Production"},{"key":"drying","label":"Drying"},{"key":"sifting","label":"Sifting"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
+    ('nano_isolate', 'Nano Isolate', 'NANOISO', TRUE, 'nano_isolate', 'in_production',
+     '[{"key":"in_production","label":"In Production"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
     ('edibles_rosin', 'Edibles Rosin', 'EROSIN', TRUE, 'rosin_press', 'pressing',
      '[{"key":"pressing","label":"Pressing"},{"key":"curing","label":"Curing"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
     ('cured_rosin', 'Cured Rosin (AIO)', 'CROSIN', TRUE, 'rosin_press', 'pressing',
@@ -168,6 +172,27 @@ CREATE TABLE IF NOT EXISTS bpr_lot_transactions (
 
 CREATE INDEX IF NOT EXISTS idx_lot_txn_lot     ON bpr_lot_transactions (lot_id);
 CREATE INDEX IF NOT EXISTS idx_lot_txn_created ON bpr_lot_transactions (created_at);
+
+-- ── BPR ↔ component consumption link ──────────────────────────────────────
+-- Records that a product BPR (a NANO SKU, a rosin press) drew down a
+-- component lot as a Section 2 cannabis input. Each row is the audit line
+-- tying the finished-goods batch back to the exact component lot it consumed,
+-- and carries the ledger txn_id that decremented that lot's inventory.
+-- section_row = which Section 2 cannabis row (1-7) this input was written to.
+CREATE TABLE IF NOT EXISTS bpr_component_consumption (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bpr_uid        TEXT NOT NULL,
+    lot_code       TEXT NOT NULL REFERENCES bpr_component_lots(lot_code),
+    component_type TEXT NOT NULL,
+    weight_g       NUMERIC(12,3) NOT NULL,
+    unit           TEXT NOT NULL DEFAULT 'g',
+    section_row    INT,
+    txn_id         BIGINT REFERENCES bpr_lot_transactions(id),
+    recorded_by    TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bpr_consumption_uid ON bpr_component_consumption (bpr_uid);
+CREATE INDEX IF NOT EXISTS idx_bpr_consumption_lot ON bpr_component_consumption (lot_code);
 
 -- ── Live inventory view (dashboard reads this) ────────────────────────────
 CREATE OR REPLACE VIEW v_component_inventory AS

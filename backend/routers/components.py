@@ -403,6 +403,54 @@ def get_component_inventory(component_type: Optional[str] = None,
         conn.close()
 
 
+@router.get("/components/available")
+def get_available_components(component_type: Optional[str] = None):
+    """
+    The consumption-picker read. Generalizes /hash/available to ANY component
+    type: a NANO SKU BPR calls ?component_type=nano_isolate to list nano-isolate
+    lots it can draw down, exactly as the press flow lists ice_water_hash lots.
+
+    Returns only lots with status='available' AND a positive remaining balance,
+    each carrying current_qty (from the ledger) and its input materials — enough
+    for the downstream BPR to record the lot as a Section 2 cannabis input.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            query = """
+                SELECT l.*,
+                    COALESCE(bal.qty, 0) AS current_qty,
+                    t.display_name,
+                    json_agg(json_build_object(
+                        'fresh_frozen_uid', i.fresh_frozen_uid,
+                        'strain_name',      i.strain_name,
+                        'input_weight_g',   i.input_weight_g
+                    )) FILTER (WHERE i.id IS NOT NULL) AS inputs
+                FROM bpr_component_lots l
+                JOIN bpr_component_types t ON t.key = l.component_type
+                LEFT JOIN hash_lot_inputs i ON i.hash_lot_id = l.lot_code
+                LEFT JOIN LATERAL (
+                    SELECT SUM(qty_delta) AS qty FROM bpr_lot_transactions x
+                    WHERE x.lot_id = l.id
+                ) bal ON TRUE
+                WHERE l.status = 'available'
+            """
+            params = []
+            if component_type:
+                query += " AND l.component_type = %s"
+                params.append(component_type)
+            query += """
+                GROUP BY l.id, bal.qty, t.display_name
+                HAVING COALESCE(bal.qty, 0) > 0
+                ORDER BY l.created_at DESC
+            """
+            cur.execute(query, params)
+            lots = [dict(r) for r in cur.fetchall()]
+        return {"lots": lots, "count": len(lots)}
+    finally:
+        conn.close()
+
+
 @router.get("/components/{lot_code}")
 def get_component_lot(lot_code: str):
     """Full detail for one lot: record, inputs, ledger history, balance."""

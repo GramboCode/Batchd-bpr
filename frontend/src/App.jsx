@@ -12,6 +12,7 @@ import BPRComplete from "./pages/BPRComplete";
 import BPRError from "./pages/BPRError";
 import BPRLoading from "./pages/BPRLoading";
 import Dashboard from "./pages/Dashboard";
+import NewComponent from "./pages/NewComponent";
 import LotDetail from "./pages/LotDetail";
 import PunchDashboard from "./pages/PunchDashboard";
 import BatchDetail from "./pages/BatchDetail";
@@ -196,6 +197,7 @@ export default function App() {
           <Route path="/bpr" element={<BPRFlow />} />
           <Route path="/login" element={<Login />} />
           <Route path="/components" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/components/new" element={<ProtectedRoute><NewComponent /></ProtectedRoute>} />
           <Route path="/components/:lotCode" element={<ProtectedRoute><LotDetail /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

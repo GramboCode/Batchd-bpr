@@ -10,12 +10,12 @@ import { useAuth } from "../contexts/AuthContext";
 import "./AppHeader.css";
 
 export const EXTERNAL_LINKS = {
-  // GAS wash page (New Wash Batch) — paste the /exec URL:
-  newWashBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=wash",
+  // "New Component" is now a NATIVE React flow (/components/new) — no longer a
+  // GAS link. See NewComponent.jsx. (The old ?page=wash GAS page is retired.)
   // GAS create page (New Batch) — same deployment, ?page=create. Batch
   // creation isn't migrated to React yet (heavy GAS logic: template clone,
   // UID assignment, folder creation), so this links out for now — same
-  // pattern as newWashBatch until /create grows a native React flow.
+  // pattern as newComponent until /create grows a native React flow.
   newBatch: "https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec?page=create",
   // GAS Punch Tools batch dashboard — paste the /exec URL:
   punchTools: "https://script.google.com/macros/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec",
@@ -41,10 +41,8 @@ export default function AppHeader() {
           <Link to="/components" className={`app-nav-link ${onInventory ? "nav-on" : ""}`}>
             Components
           </Link>
-          <a className="app-nav-link" href={EXTERNAL_LINKS.newWashBatch}
-             target="_blank" rel="noreferrer">
-            New Wash Batch ↗
-          </a>
+          {/* "New Component" moved to the Components dashboard (top-right),
+              mirroring "New Batch" on the Batches dashboard. */}
           <a className="app-nav-link" href={EXTERNAL_LINKS.punchTools}
              target="_blank" rel="noreferrer">
             Legacy GAS Dashboard ↗

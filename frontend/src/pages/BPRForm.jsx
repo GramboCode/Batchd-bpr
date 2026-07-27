@@ -5,6 +5,7 @@ import SupervisorRelease from "../components/SupervisorRelease";
 import Toast from "../components/Toast";
 import "./BPRForm.css";
 import SessionLogPhase from "../components/SessionLogPhase";
+import ComponentInputPanel from "./ComponentInputPanel";
 
 export default function BPRForm({ bprData, setBprData, params, onComplete }) {
   const [phases, setPhases]           = useState([]);
@@ -229,6 +230,16 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
 
       {/* ── MAIN CONTENT ──────────────────────────────────────────── */}
       <main className="bpr-main">
+
+        {/* Section 2 component input — only for families that draw down a
+            component lot (NANO SKUs → nano_isolate, presses → ice_water_hash). */}
+        {bprData?.consumes_component && bprData?.bpr?.uid && (
+          <ComponentInputPanel
+            uid={bprData.bpr.uid}
+            componentType={bprData.consumes_component}
+            initialConsumed={bprData.consumed_components || []}
+          />
+        )}
 
         {phases.map((phase, i) => {
           const isSessionPhase = ["ice_water_wash", "freeze_drying", "sifting"].includes(phase.id);

@@ -1,0 +1,166 @@
+/* NewComponent.css — the "New Component Batch" form.
+   Reuses Dashboard.css for the shell/header; this file styles the form only. */
+
+.nc-shell { max-width: 760px; }
+
+.nc-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.nc-field { display: flex; flex-direction: column; gap: 6px; }
+.nc-grow  { flex: 1 1 0; min-width: 0; }
+
+.nc-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4A5068;
+}
+.nc-label em {
+  font-style: normal;
+  font-weight: 700;
+  color: #A8AEC0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.nc-input {
+  border: 1.5px solid #D0D5E3;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #1A1D2E;
+  background: #fff;
+  width: 100%;
+}
+.nc-input:focus { outline: none; border-color: #E8192C; }
+.nc-input:disabled { background: #F4F6FA; color: #A8AEC0; }
+.nc-textarea { resize: vertical; }
+.nc-narrow { max-width: 120px; }
+
+.nc-hint { font-size: 0.8rem; color: #8890A8; }
+.nc-hint b { color: #4A5068; }
+
+.nc-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+
+.nc-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #4A5068;
+  padding-bottom: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.nc-check input { width: 17px; height: 17px; accent-color: #E8192C; cursor: pointer; }
+
+/* Grouped sub-sections (supplier block, input materials) */
+.nc-panel {
+  border: 1.5px solid #E2E6EF;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #FAFBFE;
+}
+.nc-panel-title {
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1A1D2E;
+}
+.nc-panel-title em {
+  font-style: normal;
+  font-weight: 600;
+  color: #A8AEC0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.nc-input-row { display: flex; gap: 8px; align-items: center; }
+.nc-row-del {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border: 1.5px solid #E2E6EF;
+  background: #fff;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: #B91C1C;
+  cursor: pointer;
+}
+.nc-row-del:disabled { color: #C3C9D9; cursor: not-allowed; }
+.nc-row-del:hover:not(:disabled) { border-color: #E8192C; }
+
+.nc-add {
+  align-self: flex-start;
+  background: none;
+  border: 1.5px dashed #C0C6D6;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #4A5068;
+  cursor: pointer;
+  font-family: inherit;
+}
+.nc-add:hover { border-color: #E8192C; color: #E8192C; }
+
+.nc-error {
+  background: #FEE2E2;
+  border: 1.5px solid #FCA5A5;
+  color: #B91C1C;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.nc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+.nc-cancel {
+  background: #fff;
+  border: 1.5px solid #D0D5E3;
+  border-radius: 10px;
+  padding: 11px 20px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: #4A5068;
+  cursor: pointer;
+  font-family: inherit;
+}
+.nc-cancel:hover { border-color: #8890A8; }
+.nc-submit {
+  background: #E8192C;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 24px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.nc-submit:hover:not(:disabled) { background: #C01020; }
+.nc-submit:disabled { background: #E8A0A8; cursor: not-allowed; }
+
+@media (max-width: 560px) {
+  .nc-row { flex-direction: column; align-items: stretch; }
+  .nc-check { padding-bottom: 0; }
+}
