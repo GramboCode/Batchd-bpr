@@ -168,6 +168,7 @@ export default function LotDetail() {
       {inputs?.length > 0 && (
         <section className="lot-section">
           <h2 className="lot-h2">Source Materials</h2>
+          <div className="dash-table-wrap">
           <table className="dash-table">
             <thead><tr><th>Fresh Frozen UID</th><th>Strain</th><th className="num">Weight In</th></tr></thead>
             <tbody>
@@ -180,6 +181,7 @@ export default function LotDetail() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
 
@@ -190,6 +192,7 @@ export default function LotDetail() {
             No transactions yet — inventory is born at the sift weigh-in (or receipt for 3rd-party lots).
           </div>
         ) : (
+          <div className="dash-table-wrap">
           <table className="dash-table">
             <thead>
               <tr>
@@ -217,6 +220,7 @@ export default function LotDetail() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

@@ -42,12 +42,12 @@
 .cip-chip-lot { font-weight: 800; font-family: 'JetBrains Mono', ui-monospace, monospace; color: #065F46; }
 .cip-chip-wt  { font-weight: 700; color: #0A7A3E; }
 .cip-chip-x {
-  width: 20px; height: 20px;
+  width: 26px; height: 26px;
   border: none;
   border-radius: 50%;
   background: #0A7A3E;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
 }

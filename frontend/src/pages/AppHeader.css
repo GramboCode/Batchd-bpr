@@ -90,6 +90,9 @@
 
 @media (max-width: 560px) {
   /* "PUNCH TOOLS" is short — keep the full logo on mobile. */
-  .app-nav-link { padding: 6px 8px; font-size: 0.72rem; }
+  .app-nav { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .app-nav-link { padding: 6px 8px; font-size: 0.72rem; white-space: nowrap; }
+  /* Hide the long "Legacy GAS Dashboard ↗" link so the bar doesn't overflow. */
+  .app-nav a.app-nav-link:last-child { display: none; }
   .app-user-email { display: none; }
 }

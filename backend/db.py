@@ -98,8 +98,13 @@ CREATE TABLE IF NOT EXISTS bpr_component_types (
     default_status       TEXT NOT NULL,
     status_workflow      JSONB NOT NULL,
     unit_of_measure      TEXT NOT NULL DEFAULT 'g',
+    archived             BOOLEAN NOT NULL DEFAULT FALSE,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Existing installs won't get the column from CREATE TABLE IF NOT EXISTS, so add
+-- it explicitly. `archived` hides a type from the New Component picker without
+-- deleting it (deletion would break the FK from any lot that used it).
+ALTER TABLE bpr_component_types ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Seed known types on fresh installs. ON CONFLICT DO NOTHING means existing
 -- rows (which you may have edited by hand) are never overwritten on boot.
@@ -121,8 +126,6 @@ VALUES
     ('nano_cbn', 'NANO-CBN', 'NANOCBN', TRUE, NULL, 'in_production',
      '[{"key":"in_production","label":"In Production"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'ml'),
     ('distillate_3p', 'Distillate (3rd Party)', 'DIST', FALSE, NULL, 'received',
-     '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
-    ('bho_badder_3p', 'BHO Badder (3rd Party)', 'BADDER', FALSE, NULL, 'received',
      '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g'),
     ('shatter_3p', 'Shatter (3rd Party)', 'SHATTER', FALSE, NULL, 'received',
      '[{"key":"received","label":"Received"},{"key":"qc_hold","label":"QC Hold"},{"key":"available","label":"Available"},{"key":"in_use","label":"In Use"},{"key":"depleted","label":"Depleted"}]', 'g')

@@ -115,6 +115,14 @@ class ComponentLotCreate(BaseModel):
 class ComponentStatusUpdate(BaseModel):
     status: str
 
+class ComponentTypeCreate(BaseModel):
+    key: Optional[str] = None            # auto-derived from display_name if omitted
+    display_name: str
+    uid_prefix: str
+    is_produced_inhouse: bool = True
+    unit_of_measure: str = "g"
+    bpr_family: Optional[str] = None
+
 class LotTransactionCreate(BaseModel):
     txn_type: str                            # production/receipt/consumption/waste/adjustment/metrc_package
     qty_delta: float                         # signed: positive adds, negative subtracts
@@ -368,13 +376,106 @@ def create_component_lot_internal(conn, req: ComponentLotCreate) -> dict:
 
 @router.get("/components/types")
 def list_component_types():
-    """Registry listing — frontends build their type dropdowns from this."""
+    """
+    Registry listing — frontends build their type dropdowns from this. Returns
+    ALL types (including archived, each with its `archived` flag) so dashboards
+    can still resolve names for lots of a retired type; the New Component picker
+    filters archived out client-side.
+    """
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM bpr_component_types ORDER BY display_name")
+            cur.execute("SELECT * FROM bpr_component_types ORDER BY archived, display_name")
             types = [dict(r) for r in cur.fetchall()]
         return {"types": types, "count": len(types)}
+    finally:
+        conn.close()
+
+
+_PRODUCED_WORKFLOW = [
+    {"key": "in_production", "label": "In Production"}, {"key": "qc_hold", "label": "QC Hold"},
+    {"key": "available", "label": "Available"}, {"key": "in_use", "label": "In Use"},
+    {"key": "depleted", "label": "Depleted"},
+]
+_RECEIVED_WORKFLOW = [
+    {"key": "received", "label": "Received"}, {"key": "qc_hold", "label": "QC Hold"},
+    {"key": "available", "label": "Available"}, {"key": "in_use", "label": "In Use"},
+    {"key": "depleted", "label": "Depleted"},
+]
+
+
+@router.post("/components/types")
+def create_component_type(req: ComponentTypeCreate, user: dict = Depends(require_admin)):
+    """Admin: add a component type. Workflow/default status are auto-set from
+    produced-vs-received so no hand-crafted JSON is needed. If the key already
+    exists but is archived, this re-activates it."""
+    import re
+    if not req.display_name.strip() or not req.uid_prefix.strip():
+        raise HTTPException(400, "display_name and uid_prefix are required")
+    key = (req.key or req.display_name).strip().lower()
+    key = re.sub(r"[^a-z0-9]+", "_", key).strip("_")
+    if not key:
+        raise HTTPException(400, "Could not derive a valid key")
+
+    produced = req.is_produced_inhouse
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT archived FROM bpr_component_types WHERE key=%s", (key,))
+            existing = cur.fetchone()
+            if existing:
+                cur.execute("UPDATE bpr_component_types SET archived=FALSE WHERE key=%s RETURNING *", (key,))
+                row = dict(cur.fetchone())
+                conn.commit()
+                return {"type": row, "message": f"Re-activated existing type '{key}'"}
+            cur.execute("""
+                INSERT INTO bpr_component_types
+                    (key, display_name, uid_prefix, is_produced_inhouse, bpr_family,
+                     default_status, status_workflow, unit_of_measure, archived)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,FALSE)
+                RETURNING *
+            """, (
+                key, req.display_name.strip(), req.uid_prefix.strip().upper(),
+                produced, req.bpr_family,
+                "in_production" if produced else "received",
+                json.dumps(_PRODUCED_WORKFLOW if produced else _RECEIVED_WORKFLOW),
+                (req.unit_of_measure or "g").strip(),
+            ))
+            row = dict(cur.fetchone())
+        conn.commit()
+        return {"type": row, "message": f"Component type '{key}' created"}
+    finally:
+        conn.close()
+
+
+@router.delete("/components/types/{key}")
+def archive_component_type(key: str, user: dict = Depends(require_admin)):
+    """Admin: retire a type — ARCHIVED (hidden from the picker), not deleted, so
+    any lot that already used it keeps resolving its name. Reversible via PATCH."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE bpr_component_types SET archived=TRUE WHERE key=%s RETURNING key", (key,))
+            if not cur.fetchone():
+                raise HTTPException(404, f"Unknown component type: {key}")
+        conn.commit()
+        return {"success": True, "archived": key}
+    finally:
+        conn.close()
+
+
+@router.patch("/components/types/{key}")
+def restore_component_type(key: str, user: dict = Depends(require_admin)):
+    """Admin: un-archive a type so it shows in the picker again."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE bpr_component_types SET archived=FALSE WHERE key=%s RETURNING *", (key,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, f"Unknown component type: {key}")
+        conn.commit()
+        return {"type": dict(row), "success": True}
     finally:
         conn.close()
 

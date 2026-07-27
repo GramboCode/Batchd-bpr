@@ -158,8 +158,10 @@
 }
 
 /* ── Table ── */
-.pd-table-wrap { border-top: 1.5px solid #E5E7EB; }
-.pd-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+/* overflow-x lets the table scroll inside its box on phones instead of
+   pushing the whole page wide (min-width keeps columns legible). */
+.pd-table-wrap { border-top: 1.5px solid #E5E7EB; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pd-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; min-width: 620px; }
 .pd-table th {
   text-align: left;
   font-size: 0.68rem;
@@ -400,6 +402,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 .bd-hero-main { min-width: 0; }
 /* Admin-only destructive action — outlined danger so it can't be fat-fingered */
@@ -472,6 +475,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;              /* title + timestamps stack on narrow screens */
   padding: 14px 18px;
   border-bottom: 1px solid #EFF1F5;
 }

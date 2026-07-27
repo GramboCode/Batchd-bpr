@@ -6,11 +6,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { API_BASE } from "../App";
+import { useAuth } from "../contexts/AuthContext";
 import "./Dashboard.css";
 import AppHeader from "./AppHeader";
+import ManageTypes from "./ManageTypes";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [lots, setLots] = useState([]);
   const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -134,6 +138,8 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {isAdmin && <ManageTypes />}
 
       <div className="dash-filters">
         <div className="chip-row">

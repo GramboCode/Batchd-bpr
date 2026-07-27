@@ -61,7 +61,8 @@ export default function NewComponent() {
         const res = await fetch(`${API_BASE}/components/types`).then(r => r.json());
         const list = res.types || [];
         setTypes(list);
-        if (list.length) setTypeKey(list[0].key);
+        const active = list.filter(t => !t.archived);
+        if (active.length) setTypeKey(active[0].key);
       } catch {
         setLoadErr("Failed to load component types — check connection.");
       }
@@ -181,11 +182,12 @@ export default function NewComponent() {
           {/* Component type */}
           <label className="nc-field">
             <span className="nc-label">Component Type</span>
-            <select className="nc-input" value={typeKey} onChange={e => setTypeKey(e.target.value)}>
-              {types.map(t => (
-                <option key={t.key} value={t.key}>
-                  {t.display_name}{t.is_produced_inhouse ? "" : " (3rd party)"}
-                </option>
+            <select className="nc-input nc-type-select" value={typeKey}
+                    onChange={e => setTypeKey(e.target.value)}>
+              {/* display_name already says "(3rd Party)" where relevant — don't
+                  append it again. Archived types are hidden from creation. */}
+              {types.filter(t => !t.archived).map(t => (
+                <option key={t.key} value={t.key}>{t.display_name}</option>
               ))}
             </select>
             {selected && (
