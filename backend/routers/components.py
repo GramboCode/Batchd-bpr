@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from db import get_db
 from auth import require_admin
-from utils import now_utc, fmt_ts, _post_wash_gas
+from utils import now_utc, fmt_ts, _post_wash_gas, call_gas
 
 router = APIRouter(tags=["components"])
 
@@ -379,14 +379,63 @@ def list_component_types():
         conn.close()
 
 
+async def _create_component_bpr_sheet(conn, lot: dict) -> dict:
+    """
+    After a component lot is created, ask GAS to build its Google Sheet BPR +
+    Drive folder (GAS owns template cloning + folder creation + the QR embed,
+    exactly like batch/wash creation). Stores the returned sheet URL on the lot
+    (sheet_url column) and the folder URL in type_data.folder_url so the lot
+    detail page can link to both.
+
+    Best-effort: a GAS/Drive hiccup must never fail the lot creation — the lot
+    already committed. Returns {sheet_url, folder_url} (either may be None).
+    """
+    td = lot.get("type_data") or {}
+    if isinstance(td, str):
+        try: td = json.loads(td)
+        except Exception: td = {}
+
+    gas = await call_gas({
+        "action":        "createComponentBPR",
+        "lotCode":       lot["lot_code"],
+        "componentType": lot["component_type"],
+        "strain":        lot.get("strain") or "",
+        "isMixed":       bool(td.get("is_mixed")),
+        "metrcUid":      lot.get("metrc_uid") or "",
+        "date":          td.get("date") or "",
+    }, f"createComponentBPR {lot['lot_code']}")
+
+    sheet_url  = gas.get("sheetUrl")  or gas.get("sheet_url")
+    folder_url = gas.get("folderUrl") or gas.get("folder_url")
+    if not sheet_url and not folder_url:
+        return {"sheet_url": None, "folder_url": None}
+
+    # Persist: sheet_url on its column, folder_url merged into type_data
+    if folder_url:
+        td["folder_url"] = folder_url
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE bpr_component_lots SET sheet_url = COALESCE(%s, sheet_url), "
+            "type_data = %s, updated_at = NOW() WHERE lot_code = %s",
+            (sheet_url, json.dumps(td), lot["lot_code"]))
+    conn.commit()
+    return {"sheet_url": sheet_url, "folder_url": folder_url}
+
+
 @router.post("/components")
-def create_component_lot(req: ComponentLotCreate):
+async def create_component_lot(req: ComponentLotCreate):
     conn = get_db()
     try:
         lot = create_component_lot_internal(conn, req)
+        # Create the Google Sheet BPR + Drive folder (best-effort, via GAS).
+        docs = await _create_component_bpr_sheet(conn, lot)
+        if docs["sheet_url"]:
+            lot["sheet_url"] = docs["sheet_url"]
         return {
             "lot_code": lot["lot_code"],
             "lot": lot,
+            "sheet_url": docs["sheet_url"],
+            "folder_url": docs["folder_url"],
             "message": f"Component lot created: {lot['lot_code']}. Label the container now."
         }
     finally:

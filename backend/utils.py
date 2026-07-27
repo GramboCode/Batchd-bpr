@@ -61,3 +61,26 @@ async def _post_wash_gas(payload: dict, label: str):
             print(f"{label}: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
         print(f"{label} failed (non-fatal): {e}")
+
+
+async def call_gas(payload: dict, label: str) -> dict:
+    """
+    Like _post_wash_gas, but RETURNS the GAS response JSON (secret stamped the
+    same way). Use when the caller needs the result — e.g. the URL of a sheet
+    GAS just created — rather than fire-and-forget. Never raises: returns
+    {"success": False, "error": ...} on any failure so callers degrade cleanly.
+    """
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
+        return {"success": False, "error": "GAS_WEBHOOK_URL not configured"}
+    payload["secret"] = os.environ.get("GAS_SHARED_SECRET", "")
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.post(webhook_url, json=payload)
+            try:
+                return resp.json()
+            except Exception:
+                return {"success": False,
+                        "error": f"GAS non-JSON ({resp.status_code}): {resp.text[:200]}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

@@ -65,11 +65,13 @@ export default function LotDetail() {
     })();
   }, [lotCode]);
 
-  // Resolve the batch folder from the lot's METRC UID (Option B): the tag maps
-  // to a UID_TRACKER batch row, which already carries a folderURL — works for
-  // any batch type, not just wash. Best-effort: lots with no tag or no matching
-  // batch simply show no folder button.
+  // Resolve the batch folder. Preferred source: the lot's OWN folder created at
+  // component creation (type_data.folder_url). Fallback (Option B): the lot's
+  // METRC UID maps to a UID_TRACKER batch row that already carries a folderURL.
+  // Best-effort — lots with neither simply show no folder button.
   useEffect(() => {
+    const own = data?.lot?.type_data?.folder_url;
+    if (own) { setFolderUrl(own); return; }
     const mid = data?.lot?.metrc_uid;
     if (!mid) return;
     let cancelled = false;
