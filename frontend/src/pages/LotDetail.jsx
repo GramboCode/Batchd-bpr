@@ -24,6 +24,7 @@ export default function LotDetail() {
   const isAdmin = user?.role === "admin";
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [folderUrl, setFolderUrl] = useState("");
   const [showDelete, setShowDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [delErr, setDelErr] = useState("");
@@ -63,6 +64,26 @@ export default function LotDetail() {
       }
     })();
   }, [lotCode]);
+
+  // Resolve the batch folder from the lot's METRC UID (Option B): the tag maps
+  // to a UID_TRACKER batch row, which already carries a folderURL — works for
+  // any batch type, not just wash. Best-effort: lots with no tag or no matching
+  // batch simply show no folder button.
+  useEffect(() => {
+    const mid = data?.lot?.metrc_uid;
+    if (!mid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/tracker/batch/${encodeURIComponent(mid)}`);
+        const json = await res.json();
+        if (!cancelled && json.success && json.batch?.folderURL) {
+          setFolderUrl(json.batch.folderURL);
+        }
+      } catch { /* non-fatal — no folder button */ }
+    })();
+    return () => { cancelled = true; };
+  }, [data]);
 
   if (error) return (
     <div className="dash-shell">
@@ -133,6 +154,11 @@ export default function LotDetail() {
         {lot.sheet_url && (
           <a className="fact fact-link" href={lot.sheet_url} target="_blank" rel="noreferrer">
             <span>BPR Sheet</span>Open ↗
+          </a>
+        )}
+        {folderUrl && (
+          <a className="fact fact-link" href={folderUrl} target="_blank" rel="noreferrer">
+            <span>📁 Batch Folder</span>Open ↗
           </a>
         )}
       </div>
