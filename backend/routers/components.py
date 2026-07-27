@@ -22,10 +22,11 @@ they're all component-lot data, not BPR-record data.
 import json
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from db import get_db
+from auth import require_admin
 from utils import now_utc, fmt_ts, _post_wash_gas
 
 router = APIRouter(tags=["components"])
@@ -502,6 +503,62 @@ def update_component_status(lot_code: str, req: ComponentStatusUpdate):
             updated = dict(cur.fetchone())
         conn.commit()
         return {"lot": updated, "message": f"{lot_code} status → {req.status}"}
+    finally:
+        conn.close()
+
+
+@router.delete("/components/{lot_code}")
+def delete_component_lot(lot_code: str, user: dict = Depends(require_admin)):
+    """
+    ADMIN-ONLY removal of a component lot created by mistake. Deletes the lot and
+    every DB child it owns (ledger transactions, input materials, and — for hash
+    lots — wash/freeze-dry/sift sessions, tray weigh-ins, and their allocations),
+    in FK-safe order.
+
+    HARD BLOCK: if any product BPR has already consumed this lot
+    (bpr_component_consumption references it), deletion is refused — the lot is in
+    production use, and its history must be unwound first (delete/undo those
+    batches). This is DB-only; if the lot had a wash sheet, remove that separately.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            lot = get_lot(cur, lot_code)   # 404 if missing
+
+            # Refuse if a BPR already drew from this lot.
+            cur.execute(
+                "SELECT bpr_uid FROM bpr_component_consumption WHERE lot_code = %s",
+                (lot_code,))
+            used_by = [r["bpr_uid"] for r in cur.fetchall()]
+            if used_by:
+                raise HTTPException(409, {
+                    "message": f"{lot_code} was already consumed by a batch — "
+                               f"delete/undo those first.",
+                    "consumed_by": used_by,
+                })
+
+            # Children, deepest first. Allocations reference session ids; sessions,
+            # trays, and inputs reference the lot_code; transactions reference the id.
+            cur.execute("""
+                DELETE FROM hash_lot_wash_to_freezedry_allocations
+                WHERE wash_session_id IN (SELECT id FROM hash_lot_wash_sessions WHERE hash_lot_id=%s)
+                   OR freezedry_session_id IN (SELECT id FROM hash_lot_freezedry_sessions WHERE hash_lot_id=%s)
+            """, (lot_code, lot_code))
+            cur.execute("""
+                DELETE FROM hash_lot_freezedry_to_sift_allocations
+                WHERE freezedry_session_id IN (SELECT id FROM hash_lot_freezedry_sessions WHERE hash_lot_id=%s)
+                   OR sift_session_id IN (SELECT id FROM hash_lot_sift_sessions WHERE hash_lot_id=%s)
+            """, (lot_code, lot_code))
+            cur.execute("DELETE FROM hash_lot_tray_weighins       WHERE hash_lot_id = %s", (lot_code,))
+            cur.execute("DELETE FROM hash_lot_wash_sessions       WHERE hash_lot_id = %s", (lot_code,))
+            cur.execute("DELETE FROM hash_lot_freezedry_sessions  WHERE hash_lot_id = %s", (lot_code,))
+            cur.execute("DELETE FROM hash_lot_sift_sessions       WHERE hash_lot_id = %s", (lot_code,))
+            cur.execute("DELETE FROM hash_lot_inputs              WHERE hash_lot_id = %s", (lot_code,))
+            cur.execute("DELETE FROM bpr_lot_transactions         WHERE lot_id = %s", (lot["id"],))
+            cur.execute("DELETE FROM bpr_component_lots           WHERE lot_code = %s", (lot_code,))
+        conn.commit()
+        return {"success": True, "deleted": lot_code,
+                "message": f"Component lot {lot_code} deleted."}
     finally:
         conn.close()
 

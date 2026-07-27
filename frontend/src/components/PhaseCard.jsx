@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
 import "./PhaseCard.css";
 import SanitationLogWash from './SanitationLogWash';
+import useEmployeeName from "../hooks/useEmployeeName";
 
 export default function PhaseCard({
   phase, phaseIndex, isActive, isSigned, signoff,
   stepChecks, onToggle, onSignOff, onExpand, saving,
   family, uid, apiBase
 }) {
-  const [employeeName, setEmployeeName]   = useState(
-    () => localStorage.getItem("bpr_employee_name") || ""
-  );
-  const [nameSet, setNameSet]             = useState(!!localStorage.getItem("bpr_employee_name"));
+  // Shared across every phase card + the session log — set once, applies to all.
+  const [employeeName, setEmployeeName]   = useEmployeeName();
+  const nameSet = !!employeeName;
   const [notes, setNotes]                 = useState("");
   const [ccpValues, setCcpValues]         = useState({});
   const [localChecks, setLocalChecks]     = useState({});
@@ -46,17 +46,13 @@ export default function PhaseCard({
   function saveName() {
     const n = nameInput.trim();
     if (!n) return;
-    localStorage.setItem("bpr_employee_name", n);
-    setEmployeeName(n);
-    setNameSet(true);
+    setEmployeeName(n);          // writes localStorage + broadcasts to all cards
     setShowNamePrompt(false);
     setNameInput("");
   }
 
   function clearName() {
-    localStorage.removeItem("bpr_employee_name");
-    setEmployeeName("");
-    setNameSet(false);
+    setEmployeeName("");         // clears everywhere at once
   }
 
   // ── Step check ───────────────────────────────────────────────────────

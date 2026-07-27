@@ -1,6 +1,7 @@
 // SessionLogPhase.jsx
 import { useState, useEffect } from "react";
 import { API_BASE } from "../App";
+import useEmployeeName from "../hooks/useEmployeeName";
 
 const PHASE_CONFIG = {
   ice_water_wash: {
@@ -32,10 +33,9 @@ export default function SessionLogPhase({
   onToggleStep, onSignOff, onExpand, saving
 }) {
   const config = PHASE_CONFIG[phase.id];
-  const [employeeName, setEmployeeName] = useState(
-    () => localStorage.getItem("bpr_employee_name") || ""
-  );
-  const [nameSet, setNameSet] = useState(!!localStorage.getItem("bpr_employee_name"));
+  // Shared operator identity — set once, applies to every phase + session card.
+  const [employeeName, setEmployeeName] = useEmployeeName();
+  const nameSet = !!employeeName;
   const [nameInput, setNameInput] = useState("");
   const [showNamePrompt, setShowNamePrompt] = useState(false);
 
@@ -83,9 +83,7 @@ export default function SessionLogPhase({
   function saveName() {
     const n = nameInput.trim();
     if (!n) return;
-    localStorage.setItem("bpr_employee_name", n);
-    setEmployeeName(n);
-    setNameSet(true);
+    setEmployeeName(n);          // writes localStorage + broadcasts to all cards
     setShowNamePrompt(false);
     setNameInput("");
   }
@@ -293,7 +291,7 @@ export default function SessionLogPhase({
                 <div className="employee-set">
                   <span className="employee-avatar">{employeeName[0]?.toUpperCase()}</span>
                   <span className="employee-name">{employeeName}</span>
-                  <button className="btn-text-sm" onClick={() => { localStorage.removeItem("bpr_employee_name"); setEmployeeName(""); setNameSet(false); }}>
+                  <button className="btn-text-sm" onClick={() => setEmployeeName("")}>
                     Change
                   </button>
                 </div>

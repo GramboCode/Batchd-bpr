@@ -28,8 +28,9 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 import httpx
 
-from auth import get_current_user
+from auth import get_current_user, require_admin
 from sheets_client import get_sheets_client, INACTIVE_STATUSES
+from db import get_db
 
 router = APIRouter(prefix="/tracker", tags=["tracker"])
 
@@ -408,6 +409,81 @@ async def update_batch(
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.delete("/batch/{uid}")
+async def delete_batch(uid: str, user: dict = Depends(require_admin)):
+    """
+    ADMIN-ONLY full removal of an accidentally-created batch. Two systems:
+      1. BatchD Postgres — if a BPR was started, reverse any component-lot
+         consumption it recorded (so inventory isn't phantom-drained), then
+         delete the BPR record (signoffs + step checks cascade).
+      2. Google Sheet — relay to GAS `deleteBatch`, which removes the
+         UID_TRACKER row (and its product tab / folder) so it also disappears
+         from the dashboard.
+
+    Irreversible on the sheet side. Reports each system's outcome separately so
+    a GAS hiccup (row still present) is never silently hidden behind a
+    successful Postgres delete.
+    """
+    deleted_bpr = False
+    restored_lots = []
+    try:
+        conn = get_db()
+        try:
+            with conn.cursor() as cur:
+                # Reverse component consumption before deleting the link rows
+                cur.execute("""
+                    SELECT c.id, c.lot_code, c.weight_g, c.unit, l.id AS lot_id
+                    FROM bpr_component_consumption c
+                    JOIN bpr_component_lots l ON l.lot_code = c.lot_code
+                    WHERE c.bpr_uid = %s
+                """, (uid,))
+                for c in cur.fetchall():
+                    cur.execute("""
+                        INSERT INTO bpr_lot_transactions
+                            (lot_id, txn_type, qty_delta, unit, reference_type, reference_id, note)
+                        VALUES (%s, 'adjustment', %s, %s, 'bpr_delete', %s, %s)
+                    """, (c["lot_id"], c["weight_g"], c["unit"], uid,
+                          f"Restored on delete of batch {uid}"))
+                    # Un-deplete a lot that now carries balance again
+                    cur.execute(
+                        "SELECT COALESCE(SUM(qty_delta),0) AS bal FROM bpr_lot_transactions WHERE lot_id=%s",
+                        (c["lot_id"],))
+                    if float(cur.fetchone()["bal"]) > 0:
+                        cur.execute(
+                            "UPDATE bpr_component_lots SET status='available', updated_at=NOW() "
+                            "WHERE id=%s AND status='depleted'", (c["lot_id"],))
+                    restored_lots.append(c["lot_code"])
+
+                cur.execute("DELETE FROM bpr_component_consumption WHERE bpr_uid = %s", (uid,))
+                cur.execute("DELETE FROM bpr_records WHERE uid = %s RETURNING id", (uid,))
+                deleted_bpr = cur.fetchone() is not None
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        # DB cleanup failed — don't touch the sheet; report so nothing is half-done
+        return {"success": False, "stage": "postgres", "error": str(e)}
+
+    # ── Sheet removal via GAS (the part that makes it leave the dashboard) ──
+    gas = await _gas_post("deleteBatch", {"uid": uid})
+    sheet_removed = bool(gas.get("success"))
+
+    return {
+        "success": sheet_removed,
+        "deleted_bpr": deleted_bpr,
+        "restored_lots": restored_lots,
+        "sheet_removed": sheet_removed,
+        "gas": gas,
+        "message": (
+            f"Batch {uid} removed."
+            if sheet_removed else
+            f"BPR record {'deleted' if deleted_bpr else '(none found)'}, but the "
+            f"sheet row was NOT removed: {gas.get('error', 'GAS deleteBatch failed')}. "
+            f"Remove the UID_TRACKER row manually or retry."
+        ),
+    }
 
 
 # ── TESTING PUSH — delegated to GAS ────────────────────────────────────────

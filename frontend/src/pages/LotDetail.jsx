@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
+import { useAuth } from "../contexts/AuthContext";
 import "./Dashboard.css";
 import AppHeader from "./AppHeader";
 
@@ -19,8 +20,37 @@ const TXN_LABELS = {
 export default function LotDetail() {
   const { lotCode } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [delErr, setDelErr] = useState("");
+
+  async function confirmDelete() {
+    setDeleteBusy(true);
+    setDelErr("");
+    try {
+      const res = await fetch(`${API_BASE}/components/${encodeURIComponent(lotCode)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 409 = consumed by a batch; detail may be an object with consumed_by
+        const d = json.detail;
+        throw new Error(
+          (d && d.message) ? `${d.message}${d.consumed_by ? ` (${d.consumed_by.join(", ")})` : ""}`
+                           : (d || "Failed to delete lot")
+        );
+      }
+      navigate("/components", { replace: true });
+    } catch (e) {
+      setDelErr(e.message || "Failed to delete lot.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -73,12 +103,20 @@ export default function LotDetail() {
             {lot.metrc_uid && <span className="dim"> · METRC {lot.metrc_uid}</span>}
           </div>
         </div>
-        <div className="dash-totals">
-          <div className="dash-total-chip">
-            <span className="dash-total-num">
-              {(parseFloat(current_qty) || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-            </span>
-            <span className="dash-total-unit">{lot.unit} on hand</span>
+        <div className="dash-header-right">
+          {isAdmin && (
+            <button className="lot-delete-btn" onClick={() => { setDelErr(""); setShowDelete(true); }}
+                    title="Admin: permanently remove this component lot">
+              Delete Lot
+            </button>
+          )}
+          <div className="dash-totals">
+            <div className="dash-total-chip">
+              <span className="dash-total-num">
+                {(parseFloat(current_qty) || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+              </span>
+              <span className="dash-total-unit">{lot.unit} on hand</span>
+            </div>
           </div>
         </div>
       </header>
@@ -153,6 +191,30 @@ export default function LotDetail() {
           </table>
         )}
       </section>
+
+      {/* ── Admin: Delete Lot confirm ── */}
+      {showDelete && (
+        <div className="lot-modal-overlay" onClick={() => !deleteBusy && setShowDelete(false)}>
+          <div className="lot-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="lot-modal-title">Delete This Component Lot?</h3>
+            <p className="lot-modal-desc">
+              Permanently removes <strong>{lot.lot_code}</strong> and its entire history
+              (ledger, source materials{lot.component_type === "ice_water_hash" ? ", wash/dry/sift sessions, tray weigh-ins" : ""}).
+              Use only for lots created by mistake. A lot already consumed by a batch can’t
+              be deleted until that batch is removed.
+            </p>
+            {delErr && <div className="lot-modal-err">{delErr}</div>}
+            <div className="lot-modal-actions">
+              <button className="lot-modal-cancel" disabled={deleteBusy} onClick={() => setShowDelete(false)}>
+                Cancel
+              </button>
+              <button className="lot-delete-confirm" disabled={deleteBusy} onClick={confirmDelete}>
+                {deleteBusy ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );

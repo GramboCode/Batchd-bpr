@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
+import { useAuth } from "../contexts/AuthContext";
 import "./PunchDashboard.css";
 import AppHeader, { EXTERNAL_LINKS } from "./AppHeader";
 import { statusColor, statusPillStyle } from "./PunchDashboard";
@@ -110,9 +111,15 @@ function formatPreviewDate(iso) {
 export default function BatchDetail() {
   const { uid } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [batch, setBatch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ── Admin delete state ──
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   // ── Edit state ──
   const [form, setForm] = useState({
@@ -231,6 +238,25 @@ export default function BatchDetail() {
     }
   }
 
+  // ── Admin-only: full removal of an accidentally-created batch ──
+  async function confirmDelete() {
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/tracker/batch/${encodeURIComponent(uid)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || json.error || "Delete failed");
+      // Gone — leave the detail page for the dashboard.
+      navigate("/", { replace: true });
+    } catch (e) {
+      setMsg({ text: e.message || "Delete failed", ok: false });
+      setShowDelete(false);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   if (loading) return (
     <>
       <AppHeader />
@@ -283,15 +309,23 @@ export default function BatchDetail() {
 
         {/* ── Hero ── */}
         <div className="bd-hero">
-          <h1 className="bd-hero-title">{b.item || "—"}</h1>
-          <div className="bd-hero-meta">
-            <span className="bd-chip">{b.metrcUID || "—"}</span>
-            <span className="bd-chip">{b.batchID || "—"}</span>
-            <span className="pd-status-pill" style={statusPillStyle(b.status)}>
-              <span className="pd-status-dot" style={{ background: statusColor(b.status) }} />
-              {b.status || "—"}
-            </span>
+          <div className="bd-hero-main">
+            <h1 className="bd-hero-title">{b.item || "—"}</h1>
+            <div className="bd-hero-meta">
+              <span className="bd-chip">{b.metrcUID || "—"}</span>
+              <span className="bd-chip">{b.batchID || "—"}</span>
+              <span className="pd-status-pill" style={statusPillStyle(b.status)}>
+                <span className="pd-status-dot" style={{ background: statusColor(b.status) }} />
+                {b.status || "—"}
+              </span>
+            </div>
           </div>
+          {isAdmin && (
+            <button className="bd-delete-btn" onClick={() => setShowDelete(true)}
+                    title="Admin: permanently remove this batch">
+              Delete Batch
+            </button>
+          )}
         </div>
 
         {msg.text && <div className={`bd-flash ${msg.ok ? "ok" : "err"}`}>{msg.text}</div>}
@@ -560,6 +594,32 @@ export default function BatchDetail() {
                 </button>
                 <button className="pd-action-btn danger" disabled={pushBusy} onClick={confirmRemove}>
                   {pushBusy ? "Removing…" : "Remove Submission"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Admin: Delete Batch confirm ── */}
+        {showDelete && (
+          <div className="bd-modal-overlay" onClick={() => !deleteBusy && setShowDelete(false)}>
+            <div className="bd-modal" onClick={e => e.stopPropagation()}>
+              <h3 className="bd-modal-title">Delete This Batch?</h3>
+              <p className="bd-modal-desc">
+                Permanently removes <strong>{b.item || uid}</strong> ({b.metrcUID || b.batchID || uid}):
+                its BatchD production record (phases, sign-offs, step checks) <em>and</em> its
+                row in the UID_TRACKER sheet, so it disappears from the dashboard. Any component
+                lots it consumed are restored to inventory.
+                <br /><br />
+                <strong>This cannot be undone on the sheet side.</strong> Use only for batches
+                created by mistake.
+              </p>
+              <div className="bd-modal-actions">
+                <button className="pd-action-btn" disabled={deleteBusy} onClick={() => setShowDelete(false)}>
+                  Cancel
+                </button>
+                <button className="pd-action-btn danger" disabled={deleteBusy} onClick={confirmDelete}>
+                  {deleteBusy ? "Deleting…" : "Delete Permanently"}
                 </button>
               </div>
             </div>

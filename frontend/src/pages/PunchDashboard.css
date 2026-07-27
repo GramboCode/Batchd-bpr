@@ -396,7 +396,29 @@
   border-radius: 14px;
   padding: 24px 26px;
   margin-bottom: 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
+.bd-hero-main { min-width: 0; }
+/* Admin-only destructive action — outlined danger so it can't be fat-fingered */
+.bd-delete-btn {
+  flex-shrink: 0;
+  background: transparent;
+  color: #FCA5A5;
+  border: 1.5px solid #7F1D1D;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.bd-delete-btn:hover { background: #C01020; border-color: #C01020; color: #fff; }
 .bd-hero-title {
   color: #fff;
   font-size: 1.7rem;

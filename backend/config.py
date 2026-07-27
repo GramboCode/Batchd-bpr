@@ -49,7 +49,7 @@ DRIVE_COA_FOLDER_ID = _optional_env("DRIVE_COA_FOLDER_ID")
 # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
 JWT_SECRET = _require_env("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_MINUTES = 60  # how long an issued token is valid before re-auth
+JWT_EXPIRE_MINUTES = 60 * 48  # 48h — internal tool; was 60 (1h), which forced re-sign-in many times a day
 
 # Google OAuth client ID — needed to verify Google ID tokens actually came
 # from OUR frontend's Google Sign-In button (not just any Google login).
