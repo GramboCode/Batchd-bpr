@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <base target="_top">
+  <script>
+    (function() {
+      var t = localStorage.getItem('punch_theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Wash Batch — Punch Tools</title>
+  <script>
+    var DEPLOY_URL = 'https://script.google.com/a/macros/punchedibles.com/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec';
+    var BPR_API    = 'https://batchd-bpr-production.up.railway.app'; 
+    // ── API key: attach to every Railway-bound request ─────────────────
+    var BATCHD_API_KEY = '5d367fb9aa0aac3399173d57cb45577d58160c6fe864334362bcde01a3016a06';
+    var _origFetch = window.fetch.bind(window);
+    window.fetch = function(url, opts) {
+      opts = opts || {};
+      if (typeof url === 'string' && url.indexOf(BPR_API) === 0) {
+        opts = Object.assign({}, opts, {
+          headers: Object.assign({}, opts.headers || {}, { 'X-API-Key': BATCHD_API_KEY })
+        });
+      }
+      return _origFetch(url, opts);
+    };
+
+    function navigate(page, params) {
+      var url = DEPLOY_URL + '?page=' + page;
+      if (params) url += '&' + params;
+      try { window.top.location.href = url; } catch(e) { window.location.href = url; }
+    }
+  </script>
+  <style>
+    /* ── THEME ─────────────────────────────────────────── */
+    :root, [data-theme="light"] {
+      --punch-red:    #E8192C; --punch-red-dk: #C01020;
+      --bg:           #F4F6FA; --bg2:          #FFFFFF;
+      --bg3:          #F0F2F7; --bg4:          #E8EBF2;
+      --border:       #E2E6EF; --border2:      #D0D5E3;
+      --text:         #0F1117; --text2:        #4A5068; --text3: #8890A8;
+      --green:        #0A7A3E; --green-bg:     #ECFDF3;
+      --amber:        #B45309; --amber-bg:     #FFFBEB;
+      --blue:         #1A56DB;
+      --shadow-sm:    0 1px 3px rgba(0,0,0,0.06);
+    }
+    [data-theme="dark"] {
+      --bg: #0a0a0b; --bg2: #111214; --bg3: #1a1c1f; --bg4: #222428;
+      --border: #232528; --border2: #2e3035;
+      --text: #f0f0f2; --text2: #8a8d97; --text3: #4a4d56;
+      --green: #39d87a; --green-bg: rgba(57,216,122,0.10);
+      --amber: #f5a623; --amber-bg: rgba(245,166,35,0.10);
+      --blue: #3d9eff; --shadow-sm: none;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 17px; }
+    body {
+      font-family: 'Barlow', system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── TOPBAR ─────────────────────────────────────────── */
+    .topbar {
+      background: var(--bg2); border-bottom: 1.5px solid var(--border);
+      position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow-sm);
+    }
+    .topbar-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px; max-width: 860px; margin: 0 auto;
+    }
+    .topbar-brand { display: flex; align-items: center; text-decoration: none; }
+    .brand-block  { background: var(--punch-red); padding: 6px 12px 5px; border-radius: 6px 0 0 6px; }
+    .brand-block span { font-family: 'Barlow Condensed', sans-serif; font-size: 1rem;
+      font-weight: 900; color: white; text-transform: uppercase; letter-spacing: 0.04em; }
+    .brand-sub { background: var(--bg3); border: 1.5px solid var(--border2);
+      border-left: none; padding: 6px 12px 5px; border-radius: 0 6px 6px 0; }
+    .brand-sub span { font-family: 'Barlow Condensed', sans-serif; font-size: 0.75rem;
+      font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; }
+    .topbar-nav { display: flex; align-items: center; gap: 2px; }
+    .topbar-nav a { font-family: 'Barlow Condensed', sans-serif; font-size: 0.82rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text2); text-decoration: none; padding: 7px 14px;
+      border-radius: 6px; transition: all 0.12s; }
+    .topbar-nav a:hover { color: var(--text); background: var(--bg3); }
+    .topbar-nav a.active { color: white; background: var(--punch-red); }
+    .theme-btn { background: var(--bg3); border: 1.5px solid var(--border2);
+      border-radius: 6px; padding: 6px 10px; cursor: pointer;
+      font-size: 1rem; color: var(--text2); }
+
+    /* ── PAGE ────────────────────────────────────────────── */
+    .page { padding: 28px 24px 60px; max-width: 860px; margin: 0 auto; }
+    .page-header { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1.5px solid var(--border); }
+    .eyebrow { font-family: 'Barlow Condensed', sans-serif; font-size: 0.72rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--punch-red); margin-bottom: 6px; }
+    h1 { font-family: 'Barlow Condensed', sans-serif; font-size: 2.2rem;
+      font-weight: 900; text-transform: uppercase; letter-spacing: -0.01em; }
+
+    /* ── CARD ────────────────────────────────────────────── */
+    .card { background: var(--bg2); border: 1.5px solid var(--border);
+      border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+    .card-header { padding: 14px 20px; border-bottom: 1.5px solid var(--border);
+      background: var(--bg3); display: flex; align-items: center;
+      justify-content: space-between; }
+    .card-header h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 1rem;
+      font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+    .card-body { padding: 20px; }
+
+    /* ── FORM ────────────────────────────────────────────── */
+    .field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field-group label { font-family: 'Barlow Condensed', sans-serif; font-size: 0.72rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); }
+    input[type="text"], input[type="number"], select {
+      background: var(--bg2); border: 1.5px solid var(--border2);
+      border-radius: 7px; color: var(--text);
+      font-family: 'Barlow', sans-serif; font-size: 0.9rem;
+      padding: 9px 13px; width: 100%; outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--punch-red); }
+    input::placeholder { color: var(--text3); }
+
+    /* ── UID ROWS ────────────────────────────────────────── */
+    .uid-rows { display: flex; flex-direction: column; gap: 10px; }
+    .uid-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 100px 36px;
+      gap: 8px; align-items: end;
+    }
+    .uid-row-num {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.75rem;
+      font-weight: 800; color: var(--text3); text-transform: uppercase;
+      letter-spacing: 0.08em; margin-bottom: 6px;
+    }
+    .uid-row input[type="text"] {
+      font-family: 'Courier New', monospace; font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+    .btn-remove-uid {
+      width: 36px; height: 36px; border: 1.5px solid var(--border2);
+      border-radius: 7px; background: var(--bg3); color: var(--text3);
+      cursor: pointer; font-size: 1rem; display: flex;
+      align-items: center; justify-content: center; transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .btn-remove-uid:hover { border-color: var(--punch-red); color: var(--punch-red);
+      background: rgba(232,25,44,0.06); }
+    .uid-col-labels {
+      display: grid; grid-template-columns: 1fr 1fr 100px 36px;
+      gap: 8px; margin-bottom: 4px;
+    }
+    .uid-col-label { font-family: 'Barlow Condensed', sans-serif; font-size: 0.68rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text3); }
+
+    .btn-add-uid {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+      border: 1.5px dashed var(--border2); border-radius: 7px;
+      background: transparent; color: var(--text3); cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.82rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      transition: all 0.12s; margin-top: 8px; width: 100%;
+    }
+    .btn-add-uid:hover { border-color: var(--punch-red); color: var(--punch-red);
+      background: rgba(232,25,44,0.04); }
+    .btn-add-uid:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── MIXED TOGGLE ─────────────────────────────────────── */
+    .toggle-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+    .toggle-switch {
+      position: relative; width: 42px; height: 24px; flex-shrink: 0;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: var(--border2);
+      border-radius: 12px; cursor: pointer; transition: 0.2s;
+    }
+    .toggle-slider:before {
+      content: ''; position: absolute; width: 18px; height: 18px;
+      left: 3px; top: 3px; background: white; border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--amber); }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+    .toggle-label { font-size: 0.88rem; color: var(--text2); }
+    .toggle-label strong { color: var(--text); }
+
+    /* ── WEIGHT TOTAL ─────────────────────────────────────── */
+    .weight-total {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; background: var(--bg3); border: 1.5px solid var(--border);
+      border-radius: 8px; margin-top: 12px;
+    }
+    .weight-total-label { font-family: 'Barlow Condensed', sans-serif; font-size: 0.75rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); }
+    .weight-total-value { font-family: 'Barlow Condensed', sans-serif; font-size: 1.4rem;
+      font-weight: 900; color: var(--text); }
+
+    /* ── BUTTONS ─────────────────────────────────────────── */
+    .btn { display: inline-flex; align-items: center; justify-content: center;
+      gap: 7px; padding: 10px 20px; border-radius: 7px;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.9rem;
+      font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+      cursor: pointer; border: 1.5px solid transparent; transition: all 0.12s;
+      text-decoration: none; line-height: 1; }
+    .btn-primary { background: var(--punch-red); color: white; border-color: var(--punch-red); }
+    .btn-primary:hover { background: var(--punch-red-dk); }
+    .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .btn-ghost { background: transparent; color: var(--text2); border-color: var(--border2); }
+    .btn-ghost:hover { background: var(--bg3); color: var(--text); }
+    .form-actions { display: flex; align-items: center; justify-content: flex-end;
+      gap: 10px; padding: 16px 20px; border-top: 1.5px solid var(--border);
+      background: var(--bg3); }
+
+    /* ── SUCCESS STATE ───────────────────────────────────── */
+    .success-wrap { display: none; flex-direction: column; align-items: center;
+      text-align: center; padding: 48px 24px; gap: 16px; }
+    .success-wrap.show { display: flex; }
+    .success-icon { font-size: 3rem; }
+    .hash-lot-box {
+      background: var(--amber-bg); border: 2px solid var(--amber);
+      border-radius: 12px; padding: 24px 32px; width: 100%; max-width: 400px;
+    }
+    .hash-lot-label { font-family: 'Barlow Condensed', sans-serif; font-size: 0.72rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--amber); margin-bottom: 10px; }
+    .hash-lot-id { font-family: 'Courier New', monospace; font-size: 1.8rem;
+      font-weight: 700; color: var(--text); letter-spacing: 0.04em; }
+    .hash-lot-instruction { font-size: 0.82rem; color: var(--text2);
+      margin-top: 10px; line-height: 1.5; }
+    .hash-lot-details { display: flex; flex-direction: column; gap: 6px;
+      width: 100%; max-width: 400px; }
+    .detail-row { display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; background: var(--bg3); border-radius: 6px;
+      font-size: 0.85rem; }
+    .detail-row-label { color: var(--text3); font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .detail-row-value { color: var(--text); font-weight: 600; }
+
+    /* ── TOAST ───────────────────────────────────────────── */
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 11px 16px; border-radius: 7px;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.82rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      background: var(--bg2); border: 1.5px solid var(--border2); color: var(--text);
+      animation: slideIn 0.18s ease; max-width: 300px; }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--punch-red); }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(10px); }
+                         to   { opacity: 1; transform: translateX(0); } }
+
+    /* ── SPINNER ─────────────────────────────────────────── */
+    .spinner { display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
+      border-radius: 50%; animation: spin 0.65s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 640px) {
+      .uid-row { grid-template-columns: 1fr 36px; grid-template-rows: auto auto; }
+      .uid-row .strain-col, .uid-row .weight-col { grid-column: 1; }
+      .uid-col-labels { display: none; }
+      .topbar-nav { display: none; }
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="javascript:void(0)" onclick="navigate('index')" class="topbar-brand">
+      <div class="brand-block"><span>Punch</span></div>
+      <div class="brand-sub"><span>Tools</span></div>
+    </a>
+    <nav class="topbar-nav">
+      <a href="javascript:void(0)" onclick="navigate('index')">Dashboard</a>
+      <a href="javascript:void(0)" onclick="navigate('create')">New Batch</a>
+      <a href="javascript:void(0)" onclick="navigate('wash')" class="active">Wash Batch</a>
+      <a href="javascript:void(0)" onclick="navigate('import')">Import Tags</a>
+    </nav>
+    <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">☽</button>
+  </div>
+</header>
+
+<main class="page">
+
+  <div class="page-header">
+    <div class="eyebrow">Live Rosin Production</div>
+    <h1>New Wash Batch</h1>
+  </div>
+
+  <!-- ── MAIN FORM CARD ─────────────────────────────────── -->
+  <div id="mainCard">
+
+    <!-- STEP 1: Fresh Frozen Inputs -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Step 1 — Fresh Frozen METRC UIDs</h3>
+        <span style="font-family:'Barlow Condensed',sans-serif; font-size:0.72rem;
+          font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3);"
+          id="uidCountLabel">1 of 7</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:0.85rem; color:var(--text2); margin-bottom:16px; line-height:1.5;">
+          Enter each fresh frozen METRC UID being washed in this batch.
+          Add up to 7 inputs. Each UID needs a strain name and wet weight.
+        </p>
+
+        <!-- Column labels -->
+        <div class="uid-col-labels">
+          <div class="uid-col-label">METRC UID *</div>
+          <div class="uid-col-label">Strain Name *</div>
+          <div class="uid-col-label">Wet Weight (g) *</div>
+          <div></div>
+        </div>
+
+        <!-- UID rows -->
+        <div class="uid-rows" id="uidRows"></div>
+
+        <button class="btn-add-uid" id="addUidBtn" onclick="addUidRow()">
+          + Add Another UID
+        </button>
+
+        <!-- Total weight -->
+        <div class="weight-total">
+          <span class="weight-total-label">Total Wet Weight</span>
+          <span class="weight-total-value" id="totalWeight">0 g</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: Wash Details -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Step 2 — Wash Details</h3>
+      </div>
+      <div class="card-body">
+
+        <!-- Mixed strain toggle -->
+        <div class="toggle-row">
+          <label class="toggle-switch">
+            <input type="checkbox" id="isMixed" onchange="onMixedToggle()">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">
+            <strong>Mixed strain wash</strong> — check if combining multiple strains in one wash
+          </span>
+        </div>
+
+        <div class="field-group" style="margin-top:12px;">
+          <label for="primaryStrain">Primary Strain Name *
+            <span style="font-weight:400; text-transform:none; letter-spacing:0;
+              color:var(--text3); margin-left:4px;" id="strainHint">
+              (auto-filled from first UID above)
+            </span>
+          </label>
+          <input type="text" id="primaryStrain"
+            placeholder="e.g. Demon Timez"
+            oninput="updateHashPreview()">
+        </div>
+
+        <div class="field-group">
+          <label for="washDate">Wash Date *</label>
+          <input type="date" id="washDate"
+            style="font-size:0.9rem; padding:9px 13px;">
+        </div>
+
+        <div class="field-group">
+          <label for="storageLocation">Freezer Storage Location
+            <span style="font-weight:400; text-transform:none;
+              letter-spacing:0; color:var(--text3); margin-left:4px;">(optional)</span>
+          </label>
+          <input type="text" id="storageLocation"
+            placeholder="e.g. Freezer 1 — Shelf 2">
+        </div>
+
+      </div>
+    </div>
+
+    <!-- STEP 3: Hash Lot ID Preview -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Step 3 — Hash Lot ID Preview</h3>
+      </div>
+      <div class="card-body">
+        <p style="font-size:0.85rem; color:var(--text2); margin-bottom:16px; line-height:1.5;">
+          This ID will be generated when you submit. Write it on the vacuum seal bag immediately.
+        </p>
+        <div style="background:var(--amber-bg); border:1.5px solid var(--amber);
+          border-radius:8px; padding:16px 20px; display:flex; align-items:center;
+          justify-content:space-between; gap:12px;">
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif; font-size:0.68rem;
+              font-weight:700; text-transform:uppercase; letter-spacing:0.1em;
+              color:var(--amber); margin-bottom:6px;">Generated Hash Lot ID</div>
+            <input type="text" id="hashPreview" value="HASH-———-——-——"
+              oninput="onHashPreviewEdit(this.value)"
+              style="font-family:'Courier New',monospace; font-size:1.3rem;
+              font-weight:700; color:var(--text); background:transparent;
+              border:1.5px solid var(--amber); border-radius:6px; padding:4px 8px;
+              width:100%; text-transform:uppercase;">
+          </div>
+          <div style="font-family:'Barlow Condensed',sans-serif; font-size:0.75rem;
+            font-weight:700; text-transform:uppercase; letter-spacing:0.06em;
+            color:var(--amber);">Preview Only</div>
+        </div>
+        <p style="font-size:0.78rem; color:var(--text3); margin-top:10px;">
+          Sequence number assigned on submit. Format: HASH-{STRAIN}-{MMDD}-{SEQ}
+        </p>
+      </div>
+    </div>
+
+    <!-- Form actions -->
+    <div class="form-actions" style="border-radius:0 0 10px 10px;
+      border:1.5px solid var(--border); border-top:none; margin-top:-1px;">
+      <a href="javascript:void(0)" onclick="navigate('index')" class="btn btn-ghost">
+        Cancel
+      </a>
+      <button class="btn btn-primary" id="submitBtn" onclick="submitWash()" disabled>
+        Create Wash BPR
+      </button>
+    </div>
+
+  </div><!-- /mainCard -->
+
+  <!-- ── SUCCESS STATE ──────────────────────────────────── -->
+  <div class="success-wrap" id="successWrap">
+    <div class="success-icon">✓</div>
+    <h2 style="font-family:'Barlow Condensed',sans-serif; font-size:1.6rem;
+      font-weight:900; text-transform:uppercase;">Wash Batch Created</h2>
+
+    <!-- Hash Lot ID — the key deliverable -->
+    <div class="hash-lot-box">
+      <div class="hash-lot-label">Hash Lot ID — Write this on the bag NOW</div>
+      <div class="hash-lot-id" id="successHashLotId">—</div>
+      <div class="hash-lot-instruction">
+        Write this ID on the vacuum seal bag with a Sharpie before sealing.
+        This ID links the hash back to all fresh frozen UIDs in this wash.
+      </div>
+    </div>
+
+    <button class="btn btn-ghost btn-sm" onclick="copyHashLotId()" id="copyBtn"
+      style="padding:8px 16px; font-size:0.82rem;">
+      📋 Copy ID
+    </button>
+
+    <!-- Batch details -->
+    <div class="hash-lot-details" id="successDetails"></div>
+
+    <!-- Actions -->
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px;">
+      <button class="btn btn-primary" onclick="startAnotherWash()">+ New Wash Batch</button>
+      <a href="javascript:void(0)" onclick="navigate('index')" class="btn btn-ghost">
+        Dashboard
+      </a>
+    </div>
+
+    <div style="padding:12px 16px; background:var(--green-bg); border-radius:8px;
+      font-size:0.78rem; color:#065f46; line-height:1.5; max-width:400px; text-align:left;">
+      A Wash BPR has been created in the BatchD system. Open the BPR app to complete
+      the production steps and sign off each phase as the wash progresses.
+    </div>
+  </div>
+
+</main>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────
+var uidRows     = [];  // [{uid, strain, weight}]
+var nextRowId   = 1;
+var createdLot  = null;
+var hashPreviewManuallySet = false;
+
+function onHashPreviewEdit(val) {
+  hashPreviewManuallySet = true;
+  document.getElementById('hashPreview').value = val.trim().toUpperCase();
+}
+
+// ── INIT ───────────────────────────────────────────────────────────
+window.onload = function() {
+  // Set today's date
+  document.getElementById('washDate').value = new Date().toISOString().split('T')[0];
+  // Add first UID row
+  addUidRow();
+  updateSubmitBtn();
+};
+
+// ── THEME ──────────────────────────────────────────────────────────
+function toggleTheme() {
+  var cur  = document.documentElement.getAttribute('data-theme');
+  var next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('punch_theme', next);
+  document.getElementById('themeBtn').textContent = next === 'light' ? '☽' : '☀';
+}
+
+// ── UID ROW MANAGEMENT ─────────────────────────────────────────────
+function addUidRow() {
+  if (uidRows.length >= 7) return;
+
+  var id  = nextRowId++;
+  var row = { id: id, uid: '', strain: '', weight: '' };
+  uidRows.push(row);
+
+  var container = document.getElementById('uidRows');
+  var div = document.createElement('div');
+  div.className = 'uid-row';
+  div.id = 'uidRow_' + id;
+  div.innerHTML =
+    '<div>' +
+      '<div class="uid-row-num">UID ' + uidRows.length + '</div>' +
+      '<input type="text" placeholder="1A4060300005D6A000006811"' +
+        ' oninput="onUidChange(' + id + ', this.value)"' +
+        ' style="font-family:\'Courier New\',monospace; font-size:0.78rem; text-transform:uppercase;">' +
+    '</div>' +
+    '<div class="strain-col">' +
+      '<div class="uid-row-num">Strain</div>' +
+      '<input type="text" placeholder="e.g. Demon Timez"' +
+        ' oninput="onStrainChange(' + id + ', this.value)">' +
+    '</div>' +
+    '<div class="weight-col">' +
+      '<div class="uid-row-num">Weight (g)</div>' +
+      '<input type="number" placeholder="4000" min="0" step="0.1"' +
+        ' oninput="onWeightChange(' + id + ', this.value)">' +
+    '</div>' +
+    '<button class="btn-remove-uid" onclick="removeUidRow(' + id + ')"' +
+      (uidRows.length === 1 ? ' disabled style="opacity:0.3;cursor:not-allowed;"' : '') +
+      ' title="Remove">✕</button>';
+
+  container.appendChild(div);
+  updateUidCountLabel();
+  updateAddBtn();
+  updateSubmitBtn();
+}
+
+function removeUidRow(id) {
+  if (uidRows.length <= 1) return;
+  uidRows = uidRows.filter(function(r) { return r.id !== id; });
+  var el = document.getElementById('uidRow_' + id);
+  if (el) el.remove();
+  // Re-number labels
+  var rows = document.querySelectorAll('.uid-row');
+  rows.forEach(function(row, i) {
+    var label = row.querySelector('.uid-row-num');
+    if (label) label.textContent = 'UID ' + (i + 1);
+  });
+  updateUidCountLabel();
+  updateAddBtn();
+  updateTotalWeight();
+  updateHashPreview();
+  updateSubmitBtn();
+  // Re-enable remove btn on first row if only 1 left
+  if (uidRows.length === 1) {
+    var btn = document.querySelector('.btn-remove-uid');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.3'; btn.style.cursor = 'not-allowed'; }
+  }
+}
+
+function onUidChange(id, val) {
+  var row = uidRows.find(function(r) { return r.id === id; });
+  if (row) row.uid = val.trim().toUpperCase();
+  updateSubmitBtn();
+}
+
+function onStrainChange(id, val) {
+  var row = uidRows.find(function(r) { return r.id === id; });
+  if (row) row.strain = val.trim();
+  // Auto-fill primary strain from first row if not manually set
+  if (uidRows[0] && uidRows[0].id === id) {
+    var primaryInput = document.getElementById('primaryStrain');
+    if (!primaryInput.dataset.manuallySet) {
+      primaryInput.value = val;
+    }
+  }
+  updateHashPreview();
+  updateSubmitBtn();
+}
+
+function onWeightChange(id, val) {
+  var row = uidRows.find(function(r) { return r.id === id; });
+  if (row) row.weight = parseFloat(val) || 0;
+  updateTotalWeight();
+  updateSubmitBtn();
+}
+
+function updateUidCountLabel() {
+  document.getElementById('uidCountLabel').textContent =
+    uidRows.length + ' of 7';
+}
+
+function updateAddBtn() {
+  document.getElementById('addUidBtn').disabled = uidRows.length >= 7;
+}
+
+function updateTotalWeight() {
+  var total = uidRows.reduce(function(sum, r) { return sum + (parseFloat(r.weight) || 0); }, 0);
+  document.getElementById('totalWeight').textContent =
+    total > 0 ? total.toLocaleString() + ' g' : '0 g';
+}
+
+// ── MIXED TOGGLE ───────────────────────────────────────────────────
+function onMixedToggle() {
+  var mixed = document.getElementById('isMixed').checked;
+  var hint  = document.getElementById('strainHint');
+  var primaryInput = document.getElementById('primaryStrain');
+  if (mixed) {
+    hint.textContent = '(enter dominant strain or leave as "Mixed")';
+    if (!primaryInput.dataset.manuallySet) {
+      primaryInput.value = 'Mixed';
+    }
+  } else {
+    hint.textContent = '(auto-filled from first UID above)';
+    if (uidRows[0] && uidRows[0].strain) {
+      primaryInput.value = uidRows[0].strain;
+    }
+  }
+  updateHashPreview();
+}
+
+// Track manual edits to primary strain
+document.addEventListener('DOMContentLoaded', function() {
+  var pi = document.getElementById('primaryStrain');
+  if (pi) pi.addEventListener('input', function() {
+    pi.dataset.manuallySet = 'true';
+    updateHashPreview();
+  });
+});
+
+// ── HASH LOT ID PREVIEW ────────────────────────────────────────────
+function updateHashPreview() {
+  if (hashPreviewManuallySet) return;   // don't overwrite an operator's edit
+
+  var isMixed = document.getElementById('isMixed').checked;
+  var strain  = document.getElementById('primaryStrain').value.trim();
+
+  var strainCode;
+  if (isMixed || !strain) {
+    strainCode = 'MIXED';
+  } else {
+    strainCode = strain.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 6);
+    if (!strainCode) strainCode = 'UNKNWN';
+  }
+
+  var now   = new Date();
+  var mmdd  = String(now.getMonth() + 1).padStart(2, '0') +
+              String(now.getDate()).padStart(2, '0');
+  var preview = 'HASH-' + strainCode + '-' + mmdd + '-##';
+  document.getElementById('hashPreview').value = preview;
+}
+
+// ── SUBMIT VALIDATION ──────────────────────────────────────────────
+function updateSubmitBtn() {
+  var hasUids    = uidRows.every(function(r) {
+    return r.uid && r.uid.length >= 20 && r.strain && r.weight > 0;
+  });
+  var hasStrain  = document.getElementById('primaryStrain').value.trim() !== '';
+  var hasDate    = document.getElementById('washDate').value !== '';
+  var valid      = hasUids && hasStrain && hasDate && uidRows.length > 0;
+  document.getElementById('submitBtn').disabled = !valid;
+}
+
+// ── SUBMIT ──────────────────────────────────────────────────────────
+async function submitWash() {
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+
+  var isMixed      = document.getElementById('isMixed').checked;
+  var primaryStrain = document.getElementById('primaryStrain').value.trim();
+  var washDate     = document.getElementById('washDate').value;
+  var storageLocation = document.getElementById('storageLocation').value.trim();
+  var totalWeight  = uidRows.reduce(function(s, r) { return s + (parseFloat(r.weight) || 0); }, 0);
+
+  var inputs = uidRows.map(function(r) {
+    return {
+      fresh_frozen_uid: r.uid,
+      strain_name:      r.strain,
+      input_weight_g:   parseFloat(r.weight) || 0
+    };
+  });
+
+  var productName = 'Live Rosin Wash — ' + (isMixed ? 'Mixed' : primaryStrain);
+
+  try {
+    // 1. Create hash lot + get hash lot ID (Railway)
+    var hashPreviewVal = document.getElementById('hashPreview').value.trim();
+    var overridePayload = {};
+    // Only send an override if the operator actually edited it AND it doesn't
+    // still contain the "##" placeholder — sending a half-finished preview
+    // string as a real lot code would be worse than just letting the server
+    // auto-generate one.
+    if (hashPreviewManuallySet && hashPreviewVal && hashPreviewVal.indexOf('#') === -1) {
+      overridePayload.lot_code_override = hashPreviewVal;
+    }
+
+    var hashRes = await fetch(BPR_API + '/hash/create', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({
+        primary_strain: isMixed ? 'Mixed' : primaryStrain,
+        is_mixed:       isMixed,
+        wet_weight_g:   totalWeight,
+        inputs:         inputs
+      }, overridePayload))
+    });
+
+    if (!hashRes.ok) {
+      var err = await hashRes.json();
+      throw new Error(err.detail || 'Failed to create hash lot');
+    }
+
+    var hashData = await hashRes.json();
+    var hashLotId = hashData.hash_lot_id;
+
+    // 2. Assign a real METRC UID via GAS (pulls from UID_TRACKER pool)
+    btn.innerHTML = '<span class="spinner"></span> Assigning METRC UID...';
+
+    var gasResult = await new Promise(function(resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .serverAssignUidToHashLot(hashLotId, productName, isMixed ? 'Mixed' : primaryStrain, washDate);
+    });
+
+    // 3. Create the wash BPR spreadsheet from the Ice Extraction template
+    btn.innerHTML = '<span class="spinner"></span> Creating BPR sheet...';
+
+    var sheetUrl = await new Promise(function(resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .createWashBatchRecord(gasResult.uid, productName, hashLotId, isMixed ? 'Mixed' : primaryStrain, washDate);
+    });
+
+    // 4. Push the assigned UID + sheet URL back to Railway
+    await fetch(BPR_API + '/hash/' + hashLotId + '/assign-uid', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metrc_uid: gasResult.uid, sheet_url: sheetUrl })
+    });
+
+    // 5. Create BPR record in Railway
+    var bprRes = await fetch(BPR_API + '/bpr/create', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid:          hashLotId,
+        product_name: productName,
+        batch_id:     hashLotId,
+        mfg_date:     washDate,
+        category:     'rosin_wash',
+        bpr_type:     'wash'
+      })
+    });
+
+    if (!bprRes.ok) {
+      var bprErr = await bprRes.json();
+      throw new Error(bprErr.detail || 'Failed to create wash BPR');
+    }
+
+    var bprData = await bprRes.json();
+
+    createdLot = { hashLotId, primaryStrain, isMixed, totalWeight, washDate, inputs, metrcUid: gasResult.uid, sheetUrl: sheetUrl };
+    showSuccess(hashLotId, primaryStrain, isMixed, totalWeight, inputs.length, gasResult.uid, sheetUrl);
+
+  } catch(e) {
+    showToast('Error: ' + (e.message || 'Unknown error'), 'error');
+    btn.disabled = false;
+    btn.textContent = 'Create Wash BPR';
+  }
+}
+
+// ── SUCCESS ────────────────────────────────────────────────────────
+function showSuccess(hashLotId, strain, isMixed, totalWeight, inputCount, metrcUid, sheetUrl) {
+  document.getElementById('mainCard').style.display = 'none';
+  var wrap = document.getElementById('successWrap');
+  wrap.classList.add('show');
+
+  document.getElementById('successHashLotId').textContent = hashLotId;
+
+  var details = document.getElementById('successDetails');
+  var rows = [
+    ['Hash Lot ID',     hashLotId],
+    ['METRC UID',       metrcUid || '—'],
+    ['Strain',          isMixed ? 'Mixed (' + inputCount + ' inputs)' : strain],
+    ['Total Wet Weight',totalWeight.toLocaleString() + ' g'],
+    ['Fresh Frozen UIDs', inputCount],
+    ['Status',          'Washing (Ice Extraction)'],
+  ];
+  details.innerHTML = rows.map(function(pair) {
+    return '<div class="detail-row">' +
+      '<span class="detail-row-label">' + pair[0] + '</span>' +
+      '<span class="detail-row-value">' + pair[1] + '</span>' +
+    '</div>';
+  }).join('');
+
+  // Open BPR app button
+  var bprUrl = 'https://batchd-bpr.netlify.app' +
+    '?uid=' + encodeURIComponent(hashLotId) +
+    '&product=' + encodeURIComponent('Live Rosin Wash — ' + (isMixed ? 'Mixed' : strain)) +
+    '&batchId=' + encodeURIComponent(hashLotId) +
+    '&category=' + encodeURIComponent('rosin_wash') +
+    '&bprType=' + encodeURIComponent('wash');
+
+  var actionsDiv = wrap.querySelector('div[style*="display:flex"]');
+  if (actionsDiv && !document.getElementById('openBprBtn')) {
+    var bprBtn = document.createElement('button');
+    bprBtn.id   = 'openBprBtn';
+    bprBtn.type = 'button';
+    bprBtn.className = 'btn btn-primary';
+    bprBtn.textContent = 'Open Wash BPR →';
+    bprBtn.onclick = function() { window.open(bprUrl, '_blank'); };
+    actionsDiv.insertBefore(bprBtn, actionsDiv.firstChild);
+  }
+
+  // Open Batch Record Sheet button — only shown if the sheet was actually created
+  if (sheetUrl && actionsDiv && !document.getElementById('openSheetBtn')) {
+    var sheetBtn = document.createElement('a');
+    sheetBtn.id   = 'openSheetBtn';
+    sheetBtn.href = sheetUrl;
+    sheetBtn.target = '_blank';
+    sheetBtn.className = 'btn btn-ghost';
+    sheetBtn.textContent = '📄 Open BPR Sheet';
+    actionsDiv.appendChild(sheetBtn);
+  }
+}
+
+
+function copyHashLotId() {
+  var id = document.getElementById('successHashLotId').textContent;
+  navigator.clipboard.writeText(id)
+    .then(function() { showToast('Hash Lot ID copied', 'success'); })
+    .catch(function() { showToast('Select and copy manually', 'error'); });
+}
+
+function startAnotherWash() {
+  uidRows   = [];
+  nextRowId = 1;
+  createdLot = null;
+  document.getElementById('uidRows').innerHTML = '';
+  document.getElementById('primaryStrain').value = '';
+  document.getElementById('primaryStrain').dataset.manuallySet = '';
+  document.getElementById('isMixed').checked = false;
+  document.getElementById('storageLocation').value = '';
+  document.getElementById('washDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('successWrap').classList.remove('show');
+  document.getElementById('mainCard').style.display = 'block';
+  var bprBtn = document.getElementById('openBprBtn');
+  if (bprBtn) bprBtn.remove();
+  addUidRow();
+  updateHashPreview();
+  updateSubmitBtn();
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  var c = document.getElementById('toastContainer');
+  var t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(function() { t.remove(); }, 4000);
+}
+</script>
+</body>
+</html>

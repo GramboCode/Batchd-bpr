@@ -840,9 +840,33 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
 # ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
 # ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
 PRODUCT_FAMILY_TO_TEMPLATE_KEY = {
-    "gummies":     "punch_gummies",
-    "rosin_press": "punch_live_rosin",
+    "gummies":              "punch_gummies",
+    "rosin_press":          "punch_live_rosin",
+    "rosin_rocket":         "punch_rocket",
+    "bho_badder":           "punch_bho_badder",   # phase def rewritten to match BPR-BHO-001
+    "tempo_diamonds":       "tempo_lr_diamonds",  # → 'Tempo LR Diamonds' tab
+    "rosin_vape_decarb":    "punch_rosin_aio",    # → 'PUNCH Rosin Vapes' tab
+    "punch_stinger":        "punch_stinger",      # → 'PUNCH Stingers' tab
+    "punch_cookie_delight": "punch_cookie",       # → 'PUNCH Cookie Delight' tab
+    "punch_malt_balls":     "punch_malt_balls",   # → 'PUNCH Malt Balls' tab
+    "asteroids":            "punch_asteroids",    # → 'PUNCH Asteroids' tab
+    # Dynamic-tab families — templateKey → __*_DYNAMIC__ placeholder; the GAS
+    # write-back resolves the real per-flavor tab via the single-tab fallback.
+    "punch_chocolate":        "punch_punchbar",
+    "punch_chocolate_sf":     "punch_punchbar",
+    "punch_chocolate_pb":     "punch_punchbar",
+    "dr_norms_cookie":        "dr_norms",
+    "dr_norms_cookie_nano":   "dr_norms",
+    "dr_norms_rkt":           "dr_norms",
+    "dr_norms_brownie":       "dr_norms",
+    "dr_norms_brownie_sleep": "dr_norms",
+    "vapes":                  "punch_vapes",    # → 'Distillate Vapes' tab
+    "tempo_lr_vape":          "tempo_lr_aio",   # → 'TEMPO LR Vape' tab
     # "rosin_wash" stays on its own dedicated pathway (push_wash_phase_to_gas)
+    # STILL not wired: liquidabs + nano_isolate (net-new; NON-standard templates
+    # — 26/28 step Section 6 + extra equipment rows, so they don't fit the
+    # universal cell map. Phase defs authored; GAS cell maps need each tab's
+    # real cell layout before write-back can be enabled.)
 }
 
 # ── GUMMIES: phase → BPR write-back mapping (BPR-GUM-001 v2.0, 18-step) ──
@@ -899,18 +923,415 @@ LIVE_ROSIN_CANN_VALUES = {
     ("pre_production", 2): "CANN1",   # hash weight pulled from freezer → Section 2 row 1
 }
 
+# ── ROSIN ROCKET: phase → BPR write-back mapping (BPR-RKT-001 v2.0, 19 steps) ──
+# The sheet's Section 6 order (from the master template) is the source of truth.
+# The app's rosin_rocket phases were authored from this BPR, so they map cleanly
+# and contiguously — no interleaving like live rosin.
+ROSIN_ROCKET_PHASE_TO_STEPS = {
+    "pre_production":           [1, 2],           # ISO-wipe; verify flower+rosin COAs
+    "pre_weigh":                [3, 4, 5],        # flower pre-weigh; rosin worm; glass-tip prep
+    "rolling_assembly":         [6, 7, 8],        # grind; lay paper+tip; distribute flower
+    "rosin_placement_and_seal": [9, 10, 11, 12],  # place worm; roll; GlueGar seal; pack+twist
+    "unit_weight_qc":           [13],             # finished joint weight check
+    "tube_and_pouch_seal":      [14, 15],         # insert tube; pouch seal 180°F
+    "labeling_packaging":       [16, 17],         # info sticker; 10CT case
+    "sanitation":               [18, 19],         # clean-down; METRC entry
+}
+
+# CCP monitoring value → the sheet step whose VALUE/PASSFAIL cell it lands on.
+# Keys are (phase_id, ccp_index) where ccp_index matches the phase's ccp_labels.
+ROSIN_ROCKET_CCP_VALUES = {
+    ("pre_production", 0):           1,   # equipment clean/dry
+    ("pre_production", 1):           2,   # both cannabis COAs verified
+    ("pre_weigh", 0):                3,   # flower pre-weigh 1.3 g/cup
+    ("pre_weigh", 1):                4,   # rosin worm pre-weigh 0.3 g
+    ("rosin_placement_and_seal", 0): 9,   # worm out of freezer at placement
+    ("rosin_placement_and_seal", 3): 11,  # GlueGar-only seal, no saliva
+    ("unit_weight_qc", 1):           13,  # finished joint 1.6 g ±0.1 g
+    ("tube_and_pouch_seal", 1):      15,  # pouch seal 180°F
+    ("labeling_packaging", 0):       16,  # label verification, 5 fields
+    ("sanitation", 4):               19,  # METRC entry within 24 h
+}
+
+# Flower + rosin are pre-weighed and recorded in Section 2 by hand (supervisor
+# sign-off block) BEFORE production, so there's no in-production cannabis-weight
+# CCP to fan out to CANN rows — unlike gummies/live-rosin, whose cannabis is
+# weighed at incorporation time. Left empty deliberately.
+ROSIN_ROCKET_CANN_VALUES = {}
+
+# ── BHO BADDER/SHATTER: phase → BPR write-back mapping (BPR-BHO-001 v2.0) ──
+# Maps the REWRITTEN bho_badder phases (receive-and-package) to the sheet's
+# Section 6. Sheet steps 5 (Badder portion) and 6–7 (Shatter portion+seal) are
+# SKU-specific — a given batch is one or the other. The timestamp fan-out below
+# will stamp all of [5,6,7] for the portioning phase regardless of SKU; that's a
+# known limitation (a Badder batch shows Shatter steps timestamped too). Refine
+# later to stamp only operator-completed steps if the auditor flags it.
+BHO_PHASE_TO_STEPS = {
+    "receiving":          [1, 2],      # receiving verification; SDS review
+    "pre_production":     [3, 4],      # ISO-wipe; calibrate scale
+    "portioning":         [5, 6, 7],   # Badder portion; Shatter portion; Shatter seal
+    "labeling_packaging": [8, 9, 10],  # Badder label; info sticker; 10CT case
+    "sanitation":         [11, 12],    # clean-down; METRC entry
+}
+BHO_CCP_VALUES = {
+    ("receiving", 0):           1,   # COA/transfer/intact
+    ("receiving", 2):           2,   # SDS reviewed
+    ("pre_production", 0):      3,   # tools/surfaces ISO-wiped
+    ("portioning", 0):          5,   # Badder fill weight
+    ("portioning", 1):          6,   # Shatter portion weight
+    ("portioning", 2):          7,   # Shatter seal
+    ("labeling_packaging", 1):  9,   # label verification
+    ("sanitation", 1):          12,  # METRC entry within 24h
+}
+# Bulk BHO weight is recorded by hand in Section 2 (supervisor sign-off block),
+# same as Rocket — no in-production cannabis-weight CCP to fan out.
+BHO_CANN_VALUES = {}
+
+# For all products below: Section 2 cannabis weights are recorded by hand
+# (supervisor sign-off block, "complete BEFORE production"), so CANN maps are
+# empty — the in-production cannabis-weight CCPs land on their Section 6 STEP
+# VALUE cells like every other CCP, not on Section 2.
+
+# ── TEMPO DIAMONDS (BPR-DIA-001, 10 steps) ──
+TEMPO_DIAMONDS_PHASE_TO_STEPS = {
+    "receiving_verification": [1],        # COA/transfer/intact
+    "pre_production_prep":    [2],        # ISO-wipe tools/tables/jars
+    "component_blend":        [3, 4],     # weigh 4 components; mix uniform
+    "portioning":             [5],        # portion 1.0-1.05 g/jar
+    "labeling_packaging":     [6, 7, 8],  # cap+stickers; info sticker; 10CT case
+    "sanitation":             [9, 10],    # clean-down/UV; METRC
+}
+TEMPO_DIAMONDS_CCP_VALUES = {
+    ("receiving_verification", 0): 1, ("receiving_verification", 1): 1,
+    ("component_blend", 1): 3, ("component_blend", 3): 4,
+    ("portioning", 1): 5,
+    ("labeling_packaging", 2): 7, ("labeling_packaging", 3): 7,
+    ("sanitation", 3): 10,
+}
+
+# ── ROSIN VAPE DECARB (BPR-RVP-001, 16 steps) ──
+ROSIN_VAPE_DECARB_PHASE_TO_STEPS = {
+    "pre_production":   [1, 2, 3],    # ISO-flush; verify rosin COA; calibrate/set fill
+    "decarboxylation":  [4, 5, 6],    # decarb day 1/2/3+
+    "blend":            [7],          # 1g SKU distillate blend
+    "fill_calibration": [8, 9],       # load/purge; pre-run fill calibration
+    "filling":          [10, 11],     # load rack fill; squish cap
+    "packaging":        [12, 13, 14], # CR pkg heat-seal; info sticker; 20CT case
+    "sanitation":       [15, 16],     # clean-down; METRC
+}
+ROSIN_VAPE_DECARB_CCP_VALUES = {
+    ("pre_production", 1): 2,
+    ("decarboxylation", 0): 4, ("decarboxylation", 4): 6,
+    ("blend", 1): 7,
+    ("fill_calibration", 1): 9,
+    ("filling", 2): 11,
+    ("packaging", 1): 13,
+    ("sanitation", 4): 16,
+}
+
+# ── STINGER PRE-ROLLS (BPR-STG-001, 17 steps) ──
+STINGER_PHASE_TO_STEPS = {
+    "pre_production":        [1, 2, 3],   # ISO-clean; verify 3 COAs; jar strain sticker
+    "grind_and_coat":        [4, 5, 6],   # grind; spray; painting mix
+    "cone_fill_calibration": [7, 8, 9],   # ActionPac cal; fill spot-weigh; twist close
+    "painting_and_kief":     [10, 11],    # painting coat; kief rolling
+    "drying":                [12],        # 4-6 hr drying
+    "qc_jarring":            [13],        # verify dry, jar
+    "labeling_packaging":    [14, 15],    # info sticker; 25CT case
+    "sanitation":            [16, 17],    # clean-down; METRC
+}
+STINGER_CCP_VALUES = {
+    ("pre_production", 0): 1, ("pre_production", 1): 2, ("pre_production", 3): 3,
+    ("grind_and_coat", 1): 5,
+    ("cone_fill_calibration", 1): 7, ("cone_fill_calibration", 2): 8,
+    ("painting_and_kief", 0): 10, ("painting_and_kief", 1): 11,
+    ("drying", 3): 12,
+    ("qc_jarring", 0): 13,
+    ("labeling_packaging", 0): 14,
+    ("sanitation", 3): 17,
+}
+
+# ── COOKIE DELIGHT (BPR-CKD-001, 14 steps) ──
+COOKIE_DELIGHT_PHASE_TO_STEPS = {
+    "pre_production":         [1, 2, 3, 4], # dry sanit; COA; cookie count&type; preheat tunnel
+    "temper":                [5],           # melt chocolate 100-108F
+    "cannabis_incorporation": [6],          # cannabis incorporation
+    "pour_and_cookie_embed":  [7, 8, 9],    # pour1; cookie embed; pour2
+    "demold_qc":             [10, 11],      # demold; unit weight spot-check
+    "labeling_packaging":    [12],          # videojet+ilapak+label
+    "sanitation":            [13, 14],      # clean-down; METRC
+}
+COOKIE_DELIGHT_CCP_VALUES = {
+    ("pre_production", 0): 1, ("pre_production", 1): 2, ("pre_production", 3): 3,
+    ("pre_production", 4): 3, ("pre_production", 5): 4,
+    ("temper", 1): 5,
+    ("cannabis_incorporation", 0): 6, ("cannabis_incorporation", 1): 6,
+    ("pour_and_cookie_embed", 1): 8, ("pour_and_cookie_embed", 5): 9,
+    ("demold_qc", 1): 11, ("demold_qc", 2): 11,
+    ("labeling_packaging", 0): 12, ("labeling_packaging", 1): 12,
+    ("sanitation", 3): 14,
+}
+
+# ── MALT BALLS (BPR-MLT-001, 20 steps, 2-day process) ──
+MALT_BALLS_PHASE_TO_STEPS = {
+    "pre_production_day1":      [1, 2, 3],       # panner clean; COA; day1 humidity
+    "chocolate_cannabis_prep":  [4],             # melt choc + hash
+    "panning_coat":             [5, 6, 7, 8],    # cold-air load; spray; hot-air; cold-air harden
+    "rest_24hr":                [9],             # 24-hr rest
+    "day2_setup_and_humidity":  [10, 11],        # day2 clean panner; day2 humidity
+    "glossing_and_sealing":     [12, 13, 14, 15],# 1st/2nd/3rd gloss; sealing
+    "labeling_packaging":       [16, 17, 18],    # videojet; fill tube; CR cap tamper
+    "sanitation":               [19, 20],        # clean-down; METRC
+}
+MALT_BALLS_CCP_VALUES = {
+    ("pre_production_day1", 0): 1, ("pre_production_day1", 1): 2, ("pre_production_day1", 3): 3,
+    ("chocolate_cannabis_prep", 1): 4, ("chocolate_cannabis_prep", 3): 4,
+    ("panning_coat", 1): 5, ("panning_coat", 5): 7, ("panning_coat", 6): 7,
+    ("rest_24hr", 3): 9,
+    ("day2_setup_and_humidity", 0): 10, ("day2_setup_and_humidity", 1): 11,
+    ("glossing_and_sealing", 1): 12, ("glossing_and_sealing", 3): 13, ("glossing_and_sealing", 5): 15,
+    ("labeling_packaging", 0): 16, ("labeling_packaging", 6): 18,
+    ("sanitation", 3): 20,
+}
+
+# ── ASTEROIDS (BPR-AST-001, 17 steps) — own family (see bpr_phases.py) ──
+ASTEROIDS_PHASE_TO_STEPS = {
+    "pre_production":  [1],           # sanitation
+    "ingredient_prep": [2, 3],        # COA; water+gelatin bloom
+    "cook":            [4, 5, 6, 7, 8],  # cook + cannabis incorporation
+    "depositing":      [9, 10],       # hopper 165F; pour molds
+    "pop":             [11],          # 1-hour same-day pop
+    "demold":          [12],          # demold within 1 hr
+    "coating":         [13, 14],      # bubble bits; air-dry
+    "packaging":       [15],          # label + fill CR tin
+    "sanitation":      [16, 17],      # clean-down; METRC
+}
+ASTEROIDS_CCP_VALUES = {
+    ("pre_production", 0): 1,
+    ("ingredient_prep", 0): 2,
+    ("cook", 0): 4, ("cook", 2): 6, ("cook", 4): 8,
+    ("depositing", 0): 9,
+    ("pop", 0): 11,
+    ("demold", 0): 12,
+    ("coating", 1): 14,
+    ("packaging", 0): 15,
+    ("sanitation", 1): 17,
+}
+
+# ── CHOCOLATE — Standard (BPR-CHO-001, 17), SF (BPR-SFB-001, 15), PB (BPR-PBC-001, 17) ──
+CHOC_STD_PHASE_TO_STEPS = {
+    "pre_production":         [1, 2, 3],
+    "temper":                [4],
+    "cannabis_incorporation": [5, 6],
+    "pour_and_mold":          [7, 8, 9],
+    "demold_qc":             [10, 11],
+    "labeling_packaging":    [12, 13, 14, 15],
+    "sanitation":            [16, 17],
+}
+CHOC_STD_CCP_VALUES = {
+    ("pre_production", 0): 1, ("pre_production", 1): 2, ("pre_production", 3): 3,
+    ("temper", 1): 4,
+    ("cannabis_incorporation", 0): 5, ("cannabis_incorporation", 2): 5,
+    ("pour_and_mold", 5): 9,
+    ("demold_qc", 2): 11,
+    ("labeling_packaging", 0): 12, ("labeling_packaging", 2): 13,
+    ("sanitation", 5): 17,
+}
+CHOC_SF_PHASE_TO_STEPS = {  # roux/temper interleave on the sheet
+    "pre_production":              [1, 2, 3],
+    "seeding_phases":              [4, 5],
+    "roux_cannabis_incorporation": [6, 9],
+    "temper_and_snap_test":        [7, 8],
+    "pour_87f_hardstop":           [10, 11],
+    "demold_qc":                   [12],
+    "labeling_packaging":          [13],
+    "sanitation":                  [14, 15],
+}
+CHOC_SF_CCP_VALUES = {
+    ("pre_production", 0): 1, ("pre_production", 1): 2, ("pre_production", 3): 3,
+    ("seeding_phases", 1): 4, ("seeding_phases", 3): 5,
+    ("roux_cannabis_incorporation", 1): 6, ("roux_cannabis_incorporation", 5): 9,
+    ("temper_and_snap_test", 1): 7, ("temper_and_snap_test", 3): 8,
+    ("pour_87f_hardstop", 1): 10,
+    ("demold_qc", 1): 12, ("demold_qc", 3): 12,
+    ("labeling_packaging", 0): 13,
+    ("sanitation", 3): 15,
+}
+CHOC_PB_PHASE_TO_STEPS = {
+    "pre_production_allergen_clearance":        [1, 2, 3, 4, 5],
+    "dual_temper":                              [6, 7],
+    "cannabis_incorporation":                   [8, 9],
+    "pour_and_mold":                            [10, 11, 12],
+    "demold_qc":                                [13],
+    "labeling_and_postrun_allergen_clearance":  [14, 15],
+    "sanitation":                               [16, 17],
+}
+CHOC_PB_CCP_VALUES = {
+    ("pre_production_allergen_clearance", 0): 1, ("pre_production_allergen_clearance", 3): 2, ("pre_production_allergen_clearance", 5): 4,
+    ("dual_temper", 1): 6, ("dual_temper", 2): 7,
+    ("cannabis_incorporation", 1): 8,
+    ("pour_and_mold", 2): 12,
+    ("demold_qc", 0): 13,
+    ("labeling_and_postrun_allergen_clearance", 0): 14, ("labeling_and_postrun_allergen_clearance", 2): 15,
+    ("sanitation", 2): 17,
+}
+
+# ── DR. NORM'S ── cookie/nano (20-step bake), rkt (14-step press), brownie
+# (16) / brownie_sleep (17). ⚠ App CCP labels show some infusion temps as 310°F
+# while the DN sheets say 320°F — a label drift to verify; does not affect
+# write-back (operator's entered value lands in the cell either way).
+DN_COOKIE_PHASE_TO_STEPS = {
+    "pre_production": [1, 2], "infusion": [3, 4, 5, 6],
+    "mixing": [7, 8, 9, 10, 11], "forming": [12, 13, 14],
+    "baking": [15], "cooling": [16], "packaging": [17, 18, 19], "qc_release": [20],
+}
+DN_COOKIE_CCP_VALUES = {
+    ("pre_production", 1): 1, ("pre_production", 4): 2,
+    ("infusion", 2): 4, ("infusion", 3): 5, ("infusion", 5): 5, ("infusion", 6): 6,
+    ("mixing", 2): 8,
+    ("forming", 1): 12, ("forming", 3): 13, ("forming", 5): 14, ("forming", 6): 14,
+    ("baking", 0): 15, ("baking", 1): 15,
+    ("packaging", 0): 17, ("packaging", 1): 18,
+    ("qc_release", 4): 20,
+}
+DN_COOKIE_NANO_CCP_VALUES = dict(DN_COOKIE_CCP_VALUES)
+DN_COOKIE_NANO_CCP_VALUES.pop(("pre_production", 1)); DN_COOKIE_NANO_CCP_VALUES.pop(("pre_production", 4))
+DN_COOKIE_NANO_CCP_VALUES[("pre_production", 2)] = 1   # NANO: freezer temp
+DN_COOKIE_NANO_CCP_VALUES[("pre_production", 5)] = 2   # NANO: COA potency
+DN_RKT_PHASE_TO_STEPS = {
+    "pre_production": [1, 2], "infusion": [3], "marshmallow_melt": [4],
+    "cereal_mix": [5, 6], "forming": [7, 8], "cooling": [9],
+    "cut_and_weigh": [10, 11], "packaging": [12, 13], "qc_release": [14],
+}
+DN_RKT_CCP_VALUES = {
+    ("pre_production", 3): 2,
+    ("infusion", 2): 3, ("infusion", 3): 3, ("infusion", 4): 3,
+    ("marshmallow_melt", 2): 4,
+    ("cereal_mix", 2): 6,
+    ("forming", 1): 7,
+    ("cut_and_weigh", 1): 11, ("cut_and_weigh", 2): 11,
+    ("qc_release", 3): 14,
+}
+DN_BROWNIE_PHASE_TO_STEPS = {
+    "pre_production": [1], "chocolate_melt": [2], "infusion": [3],
+    "mixing": [4, 5, 6, 7, 8, 9], "forming": [10, 11], "baking": [12],
+    "cooling": [13], "packaging": [14, 15], "qc_release": [16],
+}
+DN_BROWNIE_CCP_VALUES = {
+    ("pre_production", 4): 1,
+    ("infusion", 2): 3,
+    ("mixing", 1): 5,
+    ("forming", 1): 10, ("forming", 3): 11, ("forming", 4): 11,
+    ("baking", 0): 12, ("baking", 1): 12,
+    ("packaging", 0): 14, ("packaging", 1): 15,
+    ("qc_release", 3): 16,
+}
+DN_BROWNIE_SLEEP_PHASE_TO_STEPS = {
+    "pre_production": [1], "chocolate_melt": [2], "infusion": [3, 4],
+    "mixing": [5, 6, 7, 8, 9, 10], "forming": [11, 12], "baking": [13],
+    "cooling": [14], "packaging": [15, 16], "qc_release": [17],
+}
+DN_BROWNIE_SLEEP_CCP_VALUES = {
+    ("pre_production", 5): 1, ("pre_production", 6): 1,
+    ("infusion", 1): 3, ("infusion", 2): 3, ("infusion", 3): 4,
+    ("mixing", 1): 6,
+    ("forming", 1): 11, ("forming", 3): 12, ("forming", 4): 12,
+    ("baking", 0): 13, ("baking", 1): 13,
+    ("packaging", 0): 15, ("packaging", 1): 16,
+    ("qc_release", 3): 17, ("qc_release", 4): 17,
+}
+
+# ── DISTILLATE VAPE / TEMPO AIO (BPR-DVP-001, 14 steps) — "vapes" family ──
+VAPES_PHASE_TO_STEPS = {
+    "pre_production":   [1, 2, 3],   # ISO-flush; COA; calibrate/set 1.0g
+    "source_prep":      [4, 5, 6],   # water bath+terpenes; weigh; immersion blend
+    "fill_calibration": [7, 8],      # load/purge; pre-run fill calibration
+    "filling":          [9, 10],     # load rack fill; squish cap
+    "packaging":        [11, 12],    # label; 20CT case
+    "sanitation":       [13, 14],    # clean-down ISO flush; METRC
+}
+VAPES_CCP_VALUES = {
+    ("pre_production", 2): 2, ("pre_production", 5): 3,
+    ("source_prep", 0): 4, ("source_prep", 2): 5, ("source_prep", 3): 6,
+    ("fill_calibration", 1): 8,
+    ("filling", 2): 10,
+    ("packaging", 1): 11, ("packaging", 3): 12,
+    ("sanitation", 4): 14,
+}
+
+# ── TEMPO LIVE RESIN VAPE (BPR-TLR-001, 15 steps) — own family, own tab ──
+TEMPO_LR_VAPE_PHASE_TO_STEPS = {
+    "receiving_verification": [1],       # both COAs / transfers
+    "pre_production":         [2, 3, 4], # ISO-flush; record both UIDs; calibrate 1.0g
+    "source_prep":            [5, 6, 7], # water bath/HTE; weigh both; immersion blend
+    "fill_calibration":       [8, 9],    # load/purge; pre-run calibration
+    "filling":                [10, 11],  # load rack fill; squish cap
+    "packaging":              [12, 13],  # mylar label; 20CT case
+    "sanitation":             [14, 15],  # clean-down; METRC
+}
+TEMPO_LR_VAPE_CCP_VALUES = {
+    ("receiving_verification", 0): 1,
+    ("pre_production", 0): 2, ("pre_production", 1): 3, ("pre_production", 2): 4,
+    ("source_prep", 0): 5, ("source_prep", 1): 6, ("source_prep", 2): 7,
+    ("fill_calibration", 0): 8, ("fill_calibration", 1): 9,
+    ("filling", 1): 11,
+    ("packaging", 0): 12,
+    ("sanitation", 1): 15,
+}
+
 # ── Per-family lookup registries ──
 PHASE_TO_STEPS_MAPS = {
-    "gummies":     GUMMIES_PHASE_TO_STEPS,
-    "rosin_press": LIVE_ROSIN_PHASE_TO_STEPS,
+    "gummies":                GUMMIES_PHASE_TO_STEPS,
+    "rosin_press":            LIVE_ROSIN_PHASE_TO_STEPS,
+    "rosin_rocket":           ROSIN_ROCKET_PHASE_TO_STEPS,
+    "bho_badder":             BHO_PHASE_TO_STEPS,
+    "tempo_diamonds":         TEMPO_DIAMONDS_PHASE_TO_STEPS,
+    "rosin_vape_decarb":      ROSIN_VAPE_DECARB_PHASE_TO_STEPS,
+    "punch_stinger":          STINGER_PHASE_TO_STEPS,
+    "punch_cookie_delight":   COOKIE_DELIGHT_PHASE_TO_STEPS,
+    "punch_malt_balls":       MALT_BALLS_PHASE_TO_STEPS,
+    "asteroids":              ASTEROIDS_PHASE_TO_STEPS,
+    "punch_chocolate":        CHOC_STD_PHASE_TO_STEPS,
+    "punch_chocolate_sf":     CHOC_SF_PHASE_TO_STEPS,
+    "punch_chocolate_pb":     CHOC_PB_PHASE_TO_STEPS,
+    "dr_norms_cookie":        DN_COOKIE_PHASE_TO_STEPS,
+    "dr_norms_cookie_nano":   DN_COOKIE_PHASE_TO_STEPS,
+    "dr_norms_rkt":           DN_RKT_PHASE_TO_STEPS,
+    "dr_norms_brownie":       DN_BROWNIE_PHASE_TO_STEPS,
+    "dr_norms_brownie_sleep": DN_BROWNIE_SLEEP_PHASE_TO_STEPS,
+    "vapes":                  VAPES_PHASE_TO_STEPS,
+    "tempo_lr_vape":          TEMPO_LR_VAPE_PHASE_TO_STEPS,
 }
 CCP_VALUES_MAPS = {
-    "gummies":     GUMMIES_CCP_VALUES,
-    "rosin_press": LIVE_ROSIN_CCP_VALUES,
+    "gummies":                GUMMIES_CCP_VALUES,
+    "rosin_press":            LIVE_ROSIN_CCP_VALUES,
+    "rosin_rocket":           ROSIN_ROCKET_CCP_VALUES,
+    "bho_badder":             BHO_CCP_VALUES,
+    "tempo_diamonds":         TEMPO_DIAMONDS_CCP_VALUES,
+    "rosin_vape_decarb":      ROSIN_VAPE_DECARB_CCP_VALUES,
+    "punch_stinger":          STINGER_CCP_VALUES,
+    "punch_cookie_delight":   COOKIE_DELIGHT_CCP_VALUES,
+    "punch_malt_balls":       MALT_BALLS_CCP_VALUES,
+    "asteroids":              ASTEROIDS_CCP_VALUES,
+    "punch_chocolate":        CHOC_STD_CCP_VALUES,
+    "punch_chocolate_sf":     CHOC_SF_CCP_VALUES,
+    "punch_chocolate_pb":     CHOC_PB_CCP_VALUES,
+    "dr_norms_cookie":        DN_COOKIE_CCP_VALUES,
+    "dr_norms_cookie_nano":   DN_COOKIE_NANO_CCP_VALUES,
+    "dr_norms_rkt":           DN_RKT_CCP_VALUES,
+    "dr_norms_brownie":       DN_BROWNIE_CCP_VALUES,
+    "dr_norms_brownie_sleep": DN_BROWNIE_SLEEP_CCP_VALUES,
+    "vapes":                  VAPES_CCP_VALUES,
+    "tempo_lr_vape":          TEMPO_LR_VAPE_CCP_VALUES,
 }
+# CANN maps only for families that capture cannabis weight in-production
+# (gummies/rosin_press). Everything else defaults to {} via .get() — their
+# Section 2 cannabis weights are recorded by hand pre-production.
 CANN_VALUES_MAPS = {
-    "gummies":     GUMMIES_CANN_VALUES,
-    "rosin_press": LIVE_ROSIN_CANN_VALUES,
+    "gummies":      GUMMIES_CANN_VALUES,
+    "rosin_press":  LIVE_ROSIN_CANN_VALUES,
+    "rosin_rocket": ROSIN_ROCKET_CANN_VALUES,
+    "bho_badder":   BHO_CANN_VALUES,
 }
 
 async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,

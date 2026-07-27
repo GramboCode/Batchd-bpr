@@ -2093,116 +2093,103 @@ BPR_PHASES = {
   # BHO BADDER / SHATTER
   # ─────────────────────────────────────────────────────────────────
   "bho_badder": {
-    "label": "BHO Badder / Shatter",
-    "sop_ref": "P007 / MMP-MASTER-001",
+    "label": "BHO Badder / Shatter (3rd-Party Received)",
+    "sop_ref": "MMP-BHO-001 v1.0 / PQP-BHO-001 v1.0",
     "uom": "grams",
+    # ⚠ REWRITTEN 2026-07 to match BPR-BHO-001 v2.0. Punch does NOT extract BHO
+    # in-house — bulk Badder/Shatter is RECEIVED from a 3rd-party licensed
+    # manufacturer, then portioned and packaged. The prior definition described
+    # butane extraction/purging that never happens for this product.
     "phases": [
       {
+        "id": "receiving",
+        "name": "Receiving Verification & SDS Review",
+        "steps": [
+          "RECEIVING: Confirm COA in hand and METRC transfer accepted for the 3rd-party BHO. Product sealed and intact — no hairs, debris, or visible contaminants. Supervisor sign-off MANDATORY before processing.",
+          "Record bulk BHO incoming weight and METRC UID on the Section 2 cannabis traceability block.",
+          "SDS REVIEW: Confirm butane/solvent SDS reviewed per §17211.1 training. Record reviewer name and date on BPR.",
+        ],
+        "ccps": [0, 2],
+        "ccp_labels": {
+          0: "COA in hand, METRC transfer accepted, product sealed/intact (pass/fail)",
+          2: "Butane/solvent SDS reviewed per §17211.1 — reviewer name and date recorded (pass/fail)",
+        },
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}, 2: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {
+          0: "COA missing, transfer not accepted, or contamination present: halt — do not process. Contact QA.",
+          2: "SDS not reviewed: complete §17211.1 review and record before proceeding.",
+        },
+        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
+      },
+      {
         "id": "pre_production",
-        "name": "Pre-Production Setup",
+        "name": "Sanitation & Setup",
         "steps": [
-          "Verify UID tag is attached to source material — confirm UID matches METRC record",
-          "Confirm source material weight on certified scale — record incoming weight",
-          "Verify all extraction equipment is clean, sanitized, and free of residue from previous run",
-          "All tabletop counters and surfaces: 70–99% ISO-alcohol",
-          "Confirm work area ventilation is adequate for BHO extraction",
-          "Confirm solvent (butane) supply is adequate for this batch",
-          "Gloves and eye protection on — maintain throughout extraction",
-          "Work area is free of clutter — only items for this run present",
-          "Confirm work area, trays, and tools free of food/allergen residue from any prior production",
+          "ISO-wipe all tools, utensils, and tabletops. Air dry. Wipe CR jars (Badder) or parchment (Shatter) with clean microfiber.",
+          "Calibrate scale. Place new parchment on the weighing surface.",
         ],
-        "ccps": [1],
-        "ccp_labels": {1: "Source material incoming weight (g)"},
+        "ccps": [0],
+        "ccp_labels": {0: "All tools, utensils, and surfaces ISO-wiped and dry (pass/fail)"},
+        "ccp_specs": {0: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {0: "Any residue present: re-clean before proceeding."},
         "notes_required": False,
       },
       {
-        "id": "material_receipt",
-        "name": "Material Receipt & UID Verification",
+        "id": "portioning",
+        "name": "Portioning (Badder / Shatter)",
+        # SKU-specific: a Badder batch does the Badder step; a Shatter batch does
+        # the Shatter portion + seal steps. Operator completes only the steps for
+        # this SKU; the others stay blank.
         "steps": [
-          "Confirm source material UID tag matches the UID on the METRC transfer record",
-          "Inspect source material: no visible mold, no foreign material, correct strain",
-          "Record source material strain, weight, and LOT/batch from originating transfer",
-          "Source material remains labeled with UID and batch info at all times during extraction",
+          "BADDER: Portion 1.0–1.05 g BHO Badder into each CR glass jar using clean tools. Weigh each on certified scale. Change gloves/tools when sticky.",
+          "SHATTER: Portion 1.0–1.05 g BHO Shatter onto the center of clean parchment. Fold securely. Enclose in CR sleeve.",
+          "SHATTER: Preheat band sealer to 180°F. Seal top of CR sleeve. Inspect seal — continuous, no gaps. Pull-test.",
         ],
-        "ccps": [],
-        "ccp_labels": {},
-        "notes_required": False,
-      },
-      {
-        "id": "extraction",
-        "name": "Extraction",
-        "steps": [
-          "Load material into extraction vessel per established protocol for this equipment",
-          "Run extraction — monitor pressure and temperature throughout",
-          "Collect crude extract into clean, pre-weighed collection vessel",
-          "Weigh crude extract — record crude yield weight",
-          "Calculate crude extraction efficiency: (crude yield ÷ input material) × 100",
-          "Proceed to purging immediately — do not allow crude to degrade",
-        ],
-        "ccps": [3, 4],
-        "ccp_labels": {3: "Crude extract weight (g)", 4: "Crude extraction % yield"},
-        "notes_required": False,
-      },
-      {
-        "id": "purging",
-        "name": "Purging",
-        "steps": [
-          "Transfer crude extract to vacuum oven — spread evenly on parchment",
-          "Set vacuum oven to appropriate temperature and pressure for this product type",
-          "Purge for required duration — do not rush this step (residual solvent risk)",
-          "Flip/work material at appropriate intervals per protocol",
-          "Monitor consistency — badder should have appropriate texture, shatter should be clear",
-          "Final weight after purging — record post-purge weight",
-          "Verify residual solvent reduction per protocol — note purge duration and conditions",
-          "For badder: whip to appropriate consistency if required",
-        ],
-        "ccps": [5, 6],
-        "ccp_labels": {5: "Post-purge weight (g)", 6: "Purge duration (hours) and temperature (°F)"},
+        "ccps": [0, 1, 2],
+        "ccp_labels": {
+          0: "Badder fill weight per jar (g) — 1.0–1.05 g ±0.05 g",
+          1: "Shatter portion weight (g) — 1.0–1.05 g ±0.05 g",
+          2: "Shatter CR sleeve seal — 180°F, continuous, no gaps (pass/fail)",
+        },
+        "ccp_specs": {
+          0: {"unit": "g", "min": 0.95, "max": 1.10},
+          1: {"unit": "g", "min": 0.95, "max": 1.10},
+          2: {"unit": "boolean", "min": 1, "max": 1},
+        },
+        "corrective_actions": {
+          0: "Outside tolerance: adjust and re-weigh before capping.",
+          1: "Outside tolerance: adjust and re-weigh before sealing.",
+          2: "Seal gap or failure: re-seal before packaging. Do not ship an incomplete seal.",
+        },
         "notes_required": True,
       },
       {
-        "id": "qc_yield",
-        "name": "QC & Yield Verification",
+        "id": "labeling_packaging",
+        "name": "Labeling & Packaging",
         "steps": [
-          "Calculate total yield: (post-purge weight ÷ source material weight) × 100",
-          "Visually inspect product: color, consistency, absence of foreign material or contamination",
-          "Confirm product meets visual quality standards for this SKU",
-          "Confirm UID tag remains with all product throughout",
-          "Weigh final batch quantity for METRC package creation",
-          "Record any deviations in deviation log",
+          "BADDER: Apply CR cap. Apply strain top sticker. Apply wrap sticker. Place in BHO product box.",
+          "Apply required info sticker — verify all 5 fields (product name, batch#, METRC UID, mfg date, THC%). Supervisor approval MANDATORY.",
+          "10CT case packaging. Count and record total packaged units.",
         ],
-        "ccps": [0, 4],
-        "ccp_labels": {0: "Total yield % (calculated)", 4: "Final batch weight for packaging (g)"},
+        "ccps": [1],
+        "ccp_labels": {1: "Label verification — all 5 fields present, supervisor approved (pass/fail)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Any field missing/illegible: halt labeling, correct before proceeding."},
         "notes_required": False,
-      },
-      {
-        "id": "packaging",
-        "name": "Packaging & Labeling",
-        "steps": [
-          "Confirm glass containers are clean and free of residue",
-          "Fill containers to target weight — verify on certified scale (.001g precision)",
-          "Seal containers immediately after filling",
-          "Apply UID label and batch label to each container",
-          "Verify all required label fields: Product Name, Batch#, UID#, Mfg Date, Exp Date, THC%, net weight",
-          "Place sealed containers in temperature-controlled storage",
-          "Record total packaged unit count",
-        ],
-        "ccps": [1, 6],
-        "ccp_labels": {1: "Container fill weight (g)", 6: "Total packaged units"},
-        "notes_required": False,
+        "sign_off_roles": ["Operator", "Supervisor"],
       },
       {
         "id": "sanitation",
         "name": "Post-Run Sanitation",
         "steps": [
-          "Clean all extraction equipment with ISO-alcohol — flush all lines and vessels",
-          "Clean vacuum oven surfaces — remove all residue",
-          "Wipe all tabletop counters and surfaces with 70–99% ISO-alcohol",
-          "Dispose of all single-use materials (parchment, filters) appropriately",
-          "Complete cleaning log entry — date, equipment, method, PPM, initials",
+          "Post-production clean-down. Complete Section 5 end times. UV light on overnight after ISO clean.",
+          "METRC manufacturing activity entry within 24 hours.",
         ],
-        "ccps": [],
-        "ccp_labels": {},
+        "ccps": [1],
+        "ccp_labels": {1: "METRC entry completed within 24 hours (yes/no)"},
+        "ccp_specs": {1: {"unit": "boolean", "min": 1, "max": 1}},
+        "corrective_actions": {1: "Missed 24hr window: log deviation, file entry immediately, notify QA."},
         "notes_required": False,
       },
     ]
@@ -3707,6 +3694,398 @@ BPR_PHASES = {
 
 }
 
+# ── ASTEROIDS (BPR-AST-001) ──────────────────────────────────────────────
+# Solventless Asteroids share the standardized gummy process EXCEPT the set/
+# demold stage (1-HOUR SAME-DAY POP, not the 24-hour gummy set) and the coating
+# (bubble bits, not sugar). Its own family so operators see the correct text and
+# the write-back lands on the PUNCH Asteroids tab. Defined after the literal to
+# keep the diff small.
+BPR_PHASES["asteroids"] = {
+    "label": "Solventless Asteroids 100mg",
+    "sop_ref": "MMP-AST-001 v1.0 / PQP-AST-001 v1.0",
+    "uom": "units",
+    "phases": [
+        {
+            "id": "pre_production",
+            "name": "Pre-Production Sanitation",
+            "steps": ["Pre-production sanitation — all equipment cleaned, sanitized, dry per Section 5. Litmus test sanitizer (target 200 ppm)."],
+            "ccps": [0],
+            "ccp_labels": {0: "Sanitizer 200 ppm (pass/fail)"},
+            "notes_required": False,
+        },
+        {
+            "id": "ingredient_prep",
+            "name": "COA Verification & Gelatin Bloom",
+            "steps": [
+                "Verify cannabis (hash) COA. Record METRC UID, COA batch #, potency %, required weight, actual weight, variance, THC/unit. Supervisor sign-off MANDATORY.",
+                "Weigh water (1,642 g) + gelatin (430 g). Combine, stir until no lumps. Allow to bloom.",
+            ],
+            "ccps": [0],
+            "ccp_labels": {0: "Cannabis COA verified (pass/fail)"},
+            "notes_required": False,
+        },
+        {
+            "id": "cook",
+            "name": "Cook & Cannabis Incorporation",
+            "steps": [
+                "Set burner to 360°F. Add corn syrup — heat until simmering. Add cane sugar slowly. Stir until ALL crystals dissolved — no grittiness.",
+                "Add sorbitol. Mix. Add Abelei flavor + food coloring. Mix well.",
+                "Add bloomed gelatin gradually. Stir until fully dissolved — no lumps or foam.",
+                "Add citric acid (92 g). Mix thoroughly.",
+                "CANNABIS INCORPORATION: Remove from heat. Weigh hash per COA-adjusted formula. Record actual weight. Add to mixture. Stir ≥5 min until homogenized. Supervisor initials MANDATORY.",
+            ],
+            "ccps": [0, 2, 4],
+            "ccp_labels": {
+                0: "Cook temp 360°F / no grittiness",
+                2: "Bloomed gelatin — no lumps or foam",
+                4: "Cannabis incorporation ≥5 min / no separation",
+            },
+            "notes_required": True,
+        },
+        {
+            "id": "depositing",
+            "name": "Hopper & Depositing",
+            "steps": [
+                "Set hopper to 165°F (tolerance 155–165°F). DO NOT EXCEED 170°F.",
+                "Pour mixture into silicone molds within 10 min. Fill all cavities evenly.",
+            ],
+            "ccps": [0],
+            "ccp_labels": {0: "Hopper 155–165°F"},
+            "notes_required": False,
+        },
+        {
+            "id": "pop",
+            "name": "1-Hour Same-Day Pop",
+            "steps": ["ASTEROIDS: 1-HOUR SAME-DAY POP REQUIRED. Record set start time. Do NOT leave overnight."],
+            "ccps": [0],
+            "ccp_labels": {0: "1-hour same-day pop — demold same day (pass/fail)"},
+            "notes_required": False,
+        },
+        {
+            "id": "demold",
+            "name": "Demold & Inspect",
+            "steps": ["Demold within 1 hour. Inspect each unit — correct shape, full size only. Reject partials → cannabis waste log."],
+            "ccps": [0],
+            "ccp_labels": {0: "All units inspected / demolded within 1 hr"},
+            "notes_required": False,
+        },
+        {
+            "id": "coating",
+            "name": "Bubble-Bit Coat & Dry",
+            "steps": [
+                "Coat with bubble bits (53 g/batch) per SKU color. Verify uniform coverage.",
+                "Air-dry 2–3 days until target firmness (bounce-back test).",
+            ],
+            "ccps": [1],
+            "ccp_labels": {1: "Air-dry 2–3 days / bounce-back"},
+            "notes_required": False,
+        },
+        {
+            "id": "packaging",
+            "name": "Labeling & Packaging",
+            "steps": ["Label verification (all 5 fields). Supervisor approval. Fill CR tin with 10 Asteroids. Apply CR cap. Apply tamper-evident sticker across lid-to-body seam."],
+            "ccps": [0],
+            "ccp_labels": {0: "All 5 fields / sticker spans seam"},
+            "notes_required": False,
+            "sign_off_roles": ["Operator", "Supervisor"],
+        },
+        {
+            "id": "sanitation",
+            "name": "Post-Run Sanitation",
+            "steps": [
+                "Post-production clean-down. Complete Section 5 end times.",
+                "METRC manufacturing activity entry within 24 hours.",
+            ],
+            "ccps": [1],
+            "ccp_labels": {1: "METRC entry within 24 h"},
+            "notes_required": False,
+        },
+    ],
+}
+
+# ── TEMPO LIVE RESIN VAPE (BPR-TLR-001) ──────────────────────────────────
+# Split out of the overloaded "vapes" family: TLR is a dual 3rd-party input
+# (Distillate + HTE) with a RECEIVING VERIFICATION step and lands on the
+# 'TEMPO LR Vape' tab, NOT 'Distillate Vapes'. Distillate Vape / TEMPO AIO stay
+# on the "vapes" family (BPR-DVP-001).
+BPR_PHASES["tempo_lr_vape"] = {
+    "label": "Tempo Live Resin Vape 1g AIO (Distillate + HTE, 3rd Party)",
+    "sop_ref": "MMP-DVP-001 v1.0 / PQP-DVP-001 v1.0 / BPR-TLR-001",
+    "uom": "units",
+    "phases": [
+        {
+            "id": "receiving_verification",
+            "name": "Receiving Verification",
+            "steps": ["RECEIVING: COA for Distillate AND HTE in hand. Both METRC transfers accepted. Products sealed and intact. Supervisor sign-off MANDATORY before any processing."],
+            "ccps": [0],
+            "ccp_labels": {0: "Both COAs in hand, both METRC transfers accepted (pass/fail)"},
+            "notes_required": False,
+            "sign_off_roles": ["Operator", "Supervisor"],
+        },
+        {
+            "id": "pre_production",
+            "name": "Sanitation & Setup",
+            "steps": [
+                "ISO-flush VapeJet lines. Air dry. Purge fresh oil before production.",
+                "Record: METRC UIDs for BOTH inputs, potency % for both, weights for both, variance, THC/unit. Supervisor MANDATORY.",
+                "Calibrate VapeJet. Set fill weight to 1.0 g in software.",
+            ],
+            "ccps": [0, 1, 2],
+            "ccp_labels": {
+                0: "VapeJet lines flushed, fresh oil at tip (pass/fail)",
+                1: "Both UIDs / potencies / weights recorded",
+                2: "Fill weight set to 1.0 g",
+            },
+            "notes_required": False,
+        },
+        {
+            "id": "source_prep",
+            "name": "Blend Preparation",
+            "steps": [
+                "Place distillate in water bath at 80–90°F until fluid. Place HTE in warm container.",
+                "Weigh Distillate and HTE per batch formula. Record both weights.",
+                "Combine Distillate + HTE in clean beaker. Immersion blend ≥15 min until uniform — no separation.",
+            ],
+            "ccps": [0, 1, 2],
+            "ccp_labels": {
+                0: "Water bath 80–90°F",
+                1: "Both component weights recorded (g)",
+                2: "Blend uniformity — ≥15 min, no separation",
+            },
+            "notes_required": False,
+        },
+        {
+            "id": "fill_calibration",
+            "name": "Fill-Weight Calibration",
+            "steps": [
+                "Load blend into VapeJet. Purge lines — confirm clean oil at tip.",
+                "PRE-RUN FILL WEIGHT CALIBRATION: weigh 3 units after pump cycles. Target 1.0 g ±0.05 g. MANDATORY before production run.",
+            ],
+            "ccps": [0, 1],
+            "ccp_labels": {
+                0: "Clean oil at tip, no bubbles",
+                1: "Pre-run calibration weight, avg of 3 (g) — 1.0 g ±0.05 g",
+            },
+            "notes_required": False,
+        },
+        {
+            "id": "filling",
+            "name": "Fill & Cap",
+            "steps": [
+                "Load hardware rack (24 TEMPO AIO units). Run fill cycle. Monitor for overflow.",
+                "Squish-o-matic — apply hydraulic caps. Pull-test per rack.",
+            ],
+            "ccps": [1],
+            "ccp_labels": {1: "Cap pull-test — cap does not separate"},
+            "notes_required": False,
+        },
+        {
+            "id": "packaging",
+            "name": "Labeling & Packaging",
+            "steps": [
+                "Place into SKU-correct TEMPO AIO mylar. Apply all 5 required label fields. Supervisor approval.",
+                "20CT case packaging. Count and record.",
+            ],
+            "ccps": [0],
+            "ccp_labels": {0: "Label verification — all 5 fields, §17408 compliant"},
+            "notes_required": False,
+            "sign_off_roles": ["Operator", "Supervisor"],
+        },
+        {
+            "id": "sanitation",
+            "name": "Post-Run Sanitation",
+            "steps": [
+                "Post-production clean-down — ISO flush VapeJet. Section 5 end times.",
+                "METRC manufacturing activity entry within 24 hours.",
+            ],
+            "ccps": [1],
+            "ccp_labels": {1: "METRC entry within 24 h"},
+            "notes_required": False,
+        },
+    ],
+}
+
+# ── LIQUIDABS (BPR-LQD-NANO-001) ─────────────────────────────────────────
+# 26-step ultrasonic nanoemulsion (water-compatible tincture base). NON-standard
+# template: more equipment rows + 26 production-step rows, so it does NOT fit the
+# universal 20-step cell map. Phase def is live (operators collect data); the GAS
+# cell map + PHASE_TO_STEPS registration are held until the real tab layout is
+# provided (see routers/bpr.py LIQUIDABS_PHASE_TO_STEPS).
+BPR_PHASES["liquidabs"] = {
+    "label": "LiquiDabs Nanoemulsion Concentrate (Ultrasonic)",
+    "sop_ref": "MMP-LQD-001 v1.0 / PQP-LQD-001 v1.0 / BPR-LQD-NANO-001",
+    "uom": "grams",
+    "phases": [
+        {"id": "sanitation_setup", "name": "Sanitation & Setup",
+         "steps": [
+             "Verify full CIP complete on vessel, transfer lines, mixer head, filling train. Confirm final rinse verified — NO standing water.",
+             "PRE-RUN SONOTRODE INSPECTION. Examine tip under good light. Record probe serial + cumulative run-hours. Lustrous/lightly-matte = proceed; PITTED = remove from service.",
+             "Verify recirculating chiller at setpoint and stable. Verify thermocouple + pH meter calibration current.",
+             "Verify cannabis COA. Record METRC UID, COA batch #, potency %. Calculate distillate mass for target potency.",
+             "Confirm RO / purified water in use — NOT tap. Record water system status + potability test date.",
+             "Complete allergen pre-run clearance check.",
+         ],
+         "ccps": [0, 1, 2, 3, 4],
+         "ccp_labels": {0: "CIP verified — no standing water", 1: "Sonotrode lustrous/lightly matte (not pitted)", 2: "Chiller at setpoint; instruments calibrated", 3: "Cannabis COA verified", 4: "RO water confirmed (not tap)"},
+         "notes_required": False, "sign_off_roles": ["Operator", "Supervisor"]},
+        {"id": "oil_phase", "name": "Oil Phase Preparation",
+         "steps": [
+             "Weigh refined coconut oil / MCT carrier per formula. TWO-PERSON VERIFIED on certified scale.",
+             "Add lipophilic co-surfactant + mixed tocopherols. Warm to validated blending temp, mix until dissolved and uniform.",
+             "Weigh THC distillate per calculation. TWO-PERSON VERIFIED. Add to warmed carrier, mix until homogeneous — no streaking.",
+         ],
+         "ccps": [0, 2],
+         "ccp_labels": {0: "Carrier weight within tolerance (2-person)", 2: "Distillate weight within tolerance; visually uniform (2-person)"},
+         "notes_required": False},
+        {"id": "aqueous_phase", "name": "Aqueous Phase Preparation",
+         "steps": [
+             "Charge weighed purified water into the jacketed vessel.",
+             "Add hydrophilic surfactant (polysorbate 80). Mix until fully dissolved. TWO-PERSON WEIGHT VERIFIED.",
+             "Add preservative system per formula. Mix to full dissolution. TWO-PERSON WEIGHT VERIFIED.",
+             "Measure + record aqueous-phase pH. Adjust into validated range if required; record actual adjuster amount. Re-read after adjustment.",
+         ],
+         "ccps": [1, 2, 3],
+         "ccp_labels": {1: "Surfactant weight within tolerance; clear solution", 2: "Preservative weight within tolerance", 3: "pH within validated range"},
+         "notes_required": False},
+        {"id": "coarse_emulsion", "name": "Coarse Pre-Emulsion",
+         "steps": [
+             "Confirm chiller running and at setpoint. Do NOT proceed if the jacket is not circulating.",
+             "With rotor/stator at validated speed, add oil phase to aqueous phase SLOWLY. Shear until uniform macroemulsion — no visible free oil.",
+         ],
+         "ccps": [0],
+         "ccp_labels": {0: "Chiller confirmed circulating before shear"},
+         "notes_required": False},
+        {"id": "ultrasonic", "name": "Ultrasonic Processing",
+         "steps": [
+             "Position sonotrode at validated immersion depth. Confirm vessel geometry + fill level match validated configuration.",
+             "Sonicate at validated amplitude for validated on-time. Record amplitude, start + end time. Do NOT extend the run.",
+             "MONITOR BATCH TEMPERATURE CONTINUOUSLY. Log at defined interval. If maximum reached, STOP generator, cool, open deviation.",
+             "Draw an in-process sample. Compare clarity against retained validated reference.",
+         ],
+         "ccps": [1, 2],
+         "ccp_labels": {1: "Amplitude + on-time within validated window", 2: "Batch temperature never exceeds maximum"},
+         "notes_required": True},
+        {"id": "verification", "name": "Verification",
+         "steps": [
+             "POST-RUN SONOTRODE INSPECTION. Re-examine tip. Record post-run condition + update cumulative run-hours.",
+             "Sample for particle size. Measure Z-average (or D50) + PDI by DLS or calibrated turbidity. HOLD batch pending result — do not fill.",
+             "THREE-POINT HOMOGENEITY SAMPLING (top/middle/bottom). Submit for potency. All three must agree within tolerance before release.",
+         ],
+         "ccps": [0, 1, 2],
+         "ccp_labels": {0: "Sonotrode not pitted post-run", 1: "Particle size + PDI within spec", 2: "3-point potency homogeneity within tolerance"},
+         "notes_required": False},
+        {"id": "filling_packaging", "name": "Filling & Packaging",
+         "steps": [
+             "Fill into amber / opaque CR containers. Minimize headspace. Seal each unit. Verify seal integrity on first 3 + per sampling plan.",
+             "Assign lot ID + expiry. Apply compliant label. Record storage location + temperature. Verify allergen statement.",
+         ],
+         "ccps": [0, 1],
+         "ccp_labels": {0: "Container seal integrity (first 3 seal-tested)", 1: "All required label fields present + correct"},
+         "notes_required": False, "sign_off_roles": ["Operator", "Supervisor"]},
+        {"id": "post_run", "name": "Post-Run",
+         "steps": [
+             "Full CIP of vessel, lines, mixer head, filling pump, tubing. Verify final rinse with test strip. Drain all lines — NO standing water.",
+             "Complete METRC manufacturing activity entry within 24 hours. Record entry ID on the BPR.",
+         ],
+         "ccps": [0, 1],
+         "ccp_labels": {0: "CIP — below sanitizer limit, no standing water", 1: "METRC entry within 24 h"},
+         "notes_required": False},
+    ],
+}
+
+# ── NANO-ISOLATE COMPONENT (BPR-DNANO-001) ───────────────────────────────
+# COMPONENT BPR (like rosin_wash): produces a "Nano Isolate Lot ID" that
+# downstream NANO SKU BPRs consume as a cannabis input. Same ultrasonic process
+# as LiquiDabs but with crystalline-isolate DISSOLUTION instead of a distillate,
+# plus a component-release step assigning the Lot ID. Also a NON-standard,
+# 28-step template. The downstream-lot linkage (how NANO SKUs reference this Lot
+# ID) mirrors the wash→press hash-lot mechanism and is the remaining piece.
+BPR_PHASES["nano_isolate"] = {
+    "label": "Nano Isolate Concentrate — Cannabinoid Isolate Nanoemulsion (Component)",
+    "sop_ref": "MMP-DNANO-001 v1.0 / PQP-DNANO-001 v1.0 / BPR-DNANO-001",
+    "uom": "grams",
+    "input_type": "cannabinoid_isolate",
+    "output_type": "nano_isolate_lot",
+    "phases": [
+        {"id": "sanitation_setup", "name": "Sanitation & Setup",
+         "steps": [
+             "Verify full CIP complete on vessel, transfer lines, mixer head, filling train. Confirm final rinse — NO standing water.",
+             "PRE-RUN SONOTRODE INSPECTION. Examine tip. Record probe serial + cumulative run-hours. PITTED = remove from service.",
+             "Verify recirculating chiller at setpoint and stable. Verify thermocouple + pH meter calibration current.",
+             "Verify isolate COA. Record METRC UID, COA batch #, cannabinoid identity, potency %. Calculate isolate mass for target potency.",
+             "Confirm RO / purified water in use — NOT tap. Record water system status.",
+             "Complete allergen pre-run clearance check.",
+         ],
+         "ccps": [0, 1, 2, 3, 4],
+         "ccp_labels": {0: "CIP verified — no standing water", 1: "Sonotrode not pitted", 2: "Chiller at setpoint; instruments calibrated", 3: "Isolate COA + cannabinoid identity confirmed", 4: "RO water confirmed"},
+         "notes_required": False, "sign_off_roles": ["Operator", "Supervisor"]},
+        {"id": "isolate_dissolution", "name": "Oil Phase & Isolate Dissolution",
+         "steps": [
+             "Weigh MCT / carrier oil per formula. TWO-PERSON VERIFIED on certified scale.",
+             "Warm carrier to validated dissolution temperature. Verify with calibrated probe.",
+             "Weigh isolate per calculation. TWO-PERSON VERIFIED. Add to warmed carrier IN PORTIONS with continuous agitation.",
+             "HOLD + AGITATE until isolate COMPLETELY DISSOLVED. Inspect against dark background: NO crystalline material, no grit, no cloudiness. Do NOT proceed while any crystal remains.",
+             "Add lipophilic co-surfactant + mixed tocopherols. Mix until fully dissolved and uniform.",
+         ],
+         "ccps": [0, 2, 3],
+         "ccp_labels": {0: "Carrier weight within tolerance (2-person)", 2: "Isolate weight within tolerance (2-person)", 3: "Zero visible crystalline material"},
+         "notes_required": True},
+        {"id": "aqueous_phase", "name": "Aqueous Phase Preparation",
+         "steps": [
+             "Charge weighed purified water into the jacketed vessel.",
+             "Add hydrophilic surfactant (polysorbate 80). Mix until fully dissolved. TWO-PERSON WEIGHT VERIFIED.",
+             "Add preservative system per formula. Mix to full dissolution. TWO-PERSON WEIGHT VERIFIED.",
+             "Measure + record aqueous-phase pH. Adjust into validated range if required; record actual adjuster amount.",
+         ],
+         "ccps": [1, 2, 3],
+         "ccp_labels": {1: "Surfactant weight within tolerance; clear", 2: "Preservative weight within tolerance", 3: "pH within validated range"},
+         "notes_required": False},
+        {"id": "coarse_emulsion", "name": "Coarse Pre-Emulsion",
+         "steps": [
+             "Confirm chiller running and at setpoint. Do NOT proceed if the jacket is not circulating.",
+             "With rotor/stator at validated speed, add oil phase to aqueous phase SLOWLY. Shear until uniform macroemulsion — no visible free oil.",
+         ],
+         "ccps": [0],
+         "ccp_labels": {0: "Chiller confirmed circulating before shear"},
+         "notes_required": False},
+        {"id": "ultrasonic", "name": "Ultrasonic Processing",
+         "steps": [
+             "Position sonotrode at validated immersion depth. Confirm vessel geometry + fill level match validated configuration.",
+             "Sonicate at validated amplitude for validated on-time. Record amplitude, start + end time. Do NOT extend the run.",
+             "MONITOR BATCH TEMPERATURE CONTINUOUSLY. Log at defined interval. If maximum reached, STOP, cool, open deviation.",
+             "Draw an in-process sample. Compare clarity against retained reference.",
+         ],
+         "ccps": [1, 2],
+         "ccp_labels": {1: "Amplitude + on-time within validated window", 2: "Batch temperature never exceeds maximum"},
+         "notes_required": True},
+        {"id": "verification", "name": "Verification",
+         "steps": [
+             "POST-RUN SONOTRODE INSPECTION. Re-examine tip. Record post-run condition + update run-hours.",
+             "Sample for particle size. Measure Z-average (or D50) + PDI. HOLD pending result.",
+             "THREE-POINT HOMOGENEITY SAMPLING (top/middle/bottom). Submit for potency — this component doses multiple downstream SKUs, so non-uniformity multiplies. All three must agree.",
+         ],
+         "ccps": [0, 1, 2],
+         "ccp_labels": {0: "Sonotrode not pitted post-run", 1: "Particle size + PDI within spec", 2: "3-point potency homogeneity within tolerance"},
+         "notes_required": False},
+        {"id": "component_release", "name": "Fill & Component Release",
+         "steps": [
+             "Fill into light-barrier storage containers. Minimize headspace. Seal each unit + verify seal integrity.",
+             "Assign NANO ISOLATE LOT ID + expiry. Label with lot ID, cannabinoid, potency, mfg date, expiry, METRC UID. Record storage location + temperature. This Lot ID is the input reference for every downstream NANO BPR.",
+         ],
+         "ccps": [0, 1],
+         "ccp_labels": {0: "Container seal integrity (first 3 seal-tested)", 1: "Nano Isolate Lot ID assigned + legible"},
+         "notes_required": False, "sign_off_roles": ["Operator", "Supervisor"]},
+        {"id": "post_run", "name": "Post-Run",
+         "steps": [
+             "Full CIP of vessel, lines, mixer head, filling pump, tubing. Verify final rinse with test strip. Drain all lines.",
+             "Complete METRC manufacturing activity entry within 24 hours. Record entry ID on the BPR.",
+         ],
+         "ccps": [0, 1],
+         "ccp_labels": {0: "CIP — below sanitizer limit, no standing water", 1: "METRC entry within 24 h"},
+         "notes_required": False},
+    ],
+}
+
 DR_NORMS_PREFIXES = ("dr. norm", "dr norm", "dr.norm", "norms", "doctor norm")
 
 def detect_product_family(item_name: str, category: str = "",
@@ -3731,9 +4110,19 @@ def detect_product_family(item_name: str, category: str = "",
     t = (bpr_type or "").lower().strip()
     family = None
 
-    # Dr. Norm's — runs first
     is_norms = any(n.startswith(p) for p in DR_NORMS_PREFIXES)
-    if is_norms:
+
+    # Nanoemulsion products — checked FIRST. "Nano Isolate" is a component that
+    # is often named "Dr. Norm's Nano Isolate", so it must be caught before the
+    # Dr. Norm's cookie-NANO branch below (which keys on "nano"). LiquiDabs is
+    # its own finished nanoemulsion product.
+    if "liquidab" in n:
+        family = "liquidabs"
+    elif ("nano" in n and "isolate" in n) or "nano-isolate" in n:
+        family = "nano_isolate"
+
+    # Dr. Norm's
+    elif is_norms:
         if any(x in n for x in ("sleep bite", "sleep bites", "sleep brownie")):
             family = "dr_norms_brownie_sleep"
         elif any(x in n for x in ("brownie", "blondie", "pb cup", "peanut butter cup")):
@@ -3769,7 +4158,9 @@ def detect_product_family(item_name: str, category: str = "",
         family = "bho_badder"
 
     # Edibles
-    elif "gummies" in n or "asteroids" in n:
+    elif "asteroids" in n:
+        family = "asteroids"   # own family/tab — 1-hr pop, not the gummy 24-hr set
+    elif "gummies" in n:
         family = "gummies"
     elif "malt balls" in n:
         family = "punch_malt_balls"
@@ -3797,9 +4188,17 @@ def detect_product_family(item_name: str, category: str = "",
     elif "diamond" in n:
         family = "tempo_diamonds"
 
-    # Vapes — 510, TEMPO AIO, Tempo Live Resin. Checked after the rosin
-    # vape/AIO branch and the Tempo Diamonds branch above, so neither
-    # falls through to here.
+    # Tempo Live Resin Vape (BPR-TLR-001) — dual 3rd-party Distillate + HTE,
+    # own 'TEMPO LR Vape' tab. Must be checked BEFORE the generic vapes
+    # catch-all, since "tempo live resin" contains "tempo"/"vape" and would
+    # otherwise land on 'Distillate Vapes' (the wrong tab). Excludes rosin
+    # (already routed to rosin_vape_decarb above) and diamonds (above).
+    elif "live resin vape" in n or "tempo lr" in n or \
+         ("tempo" in n and "live resin" in n):
+        family = "tempo_lr_vape"
+
+    # Vapes — 510, TEMPO AIO, Distillate. Checked after the rosin vape/AIO,
+    # Tempo Diamonds, and Tempo LR branches above, so none falls through here.
     elif "tempo" in n or "aio" in n or "distillate" in n or \
          "510" in n or "vape" in n:
         family = "vapes"
