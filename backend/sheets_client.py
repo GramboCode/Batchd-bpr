@@ -84,8 +84,13 @@ _EDITABLE_FIELD_COLS = {
 # the SKIP_STATUSES list in Batches.gs's getAllBatches().
 INACTIVE_STATUSES = {
     "compliance passed",
+    # Match BOTH spellings: Config.gs/Batches.gs list "Distru", but the live
+    # UID_TRACKER data is written "Distro" — so filtering only "distru" let
+    # every "Distro" row leak onto the dashboard. Keep both, forever safe.
     "passed but not avail in distru",
+    "passed but not avail in distro",
     "avail in distru/on menu",
+    "avail in distro/on menu",
     "archived",
 }
 

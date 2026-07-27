@@ -20,10 +20,13 @@
 
 .app-brand {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   text-decoration: none;
 }
+/* "PUNCH TOOLS" logo — matches the GAS dashboard: PUNCH in a red chip,
+   TOOLS in light text (the header is dark, so TOOLS is white, not the
+   dark ink the GAS logo uses on its light background). */
 .app-brand-punch {
   font-family: 'Barlow', system-ui, sans-serif;
   font-weight: 900;
@@ -34,13 +37,12 @@
   padding: 2px 8px;
   border-radius: 4px;
 }
-.app-brand-sub {
+.app-brand-tools {
   font-family: 'Barlow', system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #8890A8;
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.03em;
+  color: #F4F6FA;
 }
 
 .app-nav { display: flex; gap: 4px; }
@@ -87,7 +89,7 @@
 .app-user-logout:hover { color: #fff; border-color: #E8192C; background: rgba(232,25,44,0.1); }
 
 @media (max-width: 560px) {
-  .app-brand-sub { display: none; }
+  /* "PUNCH TOOLS" is short — keep the full logo on mobile. */
   .app-nav-link { padding: 6px 8px; font-size: 0.72rem; }
   .app-user-email { display: none; }
 }

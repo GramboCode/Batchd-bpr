@@ -34,7 +34,12 @@ import AppHeader, { EXTERNAL_LINKS } from "./AppHeader";
 //    kept visible (it used to mean "still needs to move to the menu"),
 //    but that's been reversed: skip it here too.
 const COMPONENT_STATUSES = new Set(["ice extraction", "components"]);
-const FINISHED_STATUSES = new Set(["avail in distru/on menu", "passed but not avail in distru"]);
+// Match BOTH spellings — Config.gs lists "Distru" but the live sheet data is
+// written "Distro", so filtering only "distru" let those rows show. Keep both.
+const FINISHED_STATUSES = new Set([
+  "avail in distru/on menu",        "avail in distro/on menu",
+  "passed but not avail in distru", "passed but not avail in distro",
+]);
 
 function isHiddenFromBatches(batch) {
   const s = (batch.status || "").toLowerCase().trim();

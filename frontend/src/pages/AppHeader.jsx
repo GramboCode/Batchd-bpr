@@ -31,8 +31,8 @@ export default function AppHeader() {
     <header className="app-header">
       <div className="app-header-inner">
         <Link to="/" className="app-brand">
-          <span className="app-brand-punch">BATCHD</span>
-          <span className="app-brand-sub">Punch Tools</span>
+          <span className="app-brand-punch">PUNCH</span>
+          <span className="app-brand-tools">TOOLS</span>
         </Link>
         <nav className="app-nav">
           <Link to="/" className={`app-nav-link ${onBatches ? "nav-on" : ""}`}>
