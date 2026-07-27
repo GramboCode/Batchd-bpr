@@ -32,6 +32,22 @@ from utils import now_utc, fmt_ts, _post_wash_gas
 router = APIRouter(tags=["components"])
 
 
+async def _push_wash_session_row(lot_code: str, block: str, row: dict):
+    """
+    Lazy bridge to bpr.push_wash_session_row, which mirrors a just-closed
+    wash/freeze-dry/sift session as a row in the wash sheet's Session Log tab.
+
+    It's imported HERE at call time — not at module top — on purpose: bpr.py
+    already imports from this module (components), so a top-level
+    `from routers.bpr import ...` here would be a circular import and crash on
+    boot. That missing import is exactly what made every session close 500 with
+    `NameError: push_wash_session_row is not defined`. The call runs inside a
+    fire-and-forget asyncio task, so the deferred import cost never matters.
+    """
+    from routers.bpr import push_wash_session_row
+    await push_wash_session_row(lot_code, block, row)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # PYDANTIC MODELS
 # ═══════════════════════════════════════════════════════════════════════
@@ -971,7 +987,7 @@ async def close_wash_session(session_id: str, req: WashSessionClose):
         conn.commit()
 
         import asyncio
-        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "wash", {
+        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "wash", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "equipment":    updated["equipment_id"] or "",
@@ -1165,7 +1181,7 @@ async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
         conn.commit()
 
         import asyncio
-        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "freezedry", {
+        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "freezedry", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "equipment":    updated["equipment_id"] or "",
@@ -1389,7 +1405,7 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
         conn.commit()
 
         import asyncio
-        asyncio.create_task(push_wash_session_row(updated["hash_lot_id"], "sift", {
+        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "sift", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "fd_used":      fd_used,
