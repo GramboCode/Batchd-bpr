@@ -862,11 +862,11 @@ PRODUCT_FAMILY_TO_TEMPLATE_KEY = {
     "dr_norms_brownie_sleep": "dr_norms",
     "vapes":                  "punch_vapes",    # → 'Distillate Vapes' tab
     "tempo_lr_vape":          "tempo_lr_aio",   # → 'TEMPO LR Vape' tab
+    "liquidabs":              "liquidabs",      # → 'LiquiDabs' tab (26-step cell map)
+    "nano_isolate":           "nano_isolate",   # → Nano-Isolate component tab (28-step map)
     # "rosin_wash" stays on its own dedicated pathway (push_wash_phase_to_gas)
-    # STILL not wired: liquidabs + nano_isolate (net-new; NON-standard templates
-    # — 26/28 step Section 6 + extra equipment rows, so they don't fit the
-    # universal cell map. Phase defs authored; GAS cell maps need each tab's
-    # real cell layout before write-back can be enabled.)
+    # ⚠ liquidabs/nano_isolate cell maps assume Section 6 steps start at the
+    # standard row 71 — verify against the real tabs (smoke test) before trusting.
 }
 
 # ── GUMMIES: phase → BPR write-back mapping (BPR-GUM-001 v2.0, 18-step) ──
@@ -1279,6 +1279,54 @@ TEMPO_LR_VAPE_CCP_VALUES = {
     ("sanitation", 1): 15,
 }
 
+# ── LIQUIDABS (BPR-LQD-NANO-001, 26 steps) — extended cell map (15,26) ──
+# ⚠ Assumes Section 6 step rows start at the standard row 71 (STEP{n} → row
+# 70+n). Verify against the real tab before trusting (see smoke-test note).
+LIQUIDABS_PHASE_TO_STEPS = {
+    "sanitation_setup": [1, 2, 3, 4, 5, 6],
+    "oil_phase":        [7, 8, 9],
+    "aqueous_phase":    [10, 11, 12, 13],
+    "coarse_emulsion":  [14, 15],
+    "ultrasonic":       [16, 17, 18, 19],
+    "verification":     [20, 21, 22],
+    "filling_packaging": [23, 24],
+    "post_run":         [25, 26],
+}
+LIQUIDABS_CCP_VALUES = {
+    ("sanitation_setup", 0): 1, ("sanitation_setup", 1): 2, ("sanitation_setup", 2): 3,
+    ("sanitation_setup", 3): 4, ("sanitation_setup", 4): 5,
+    ("oil_phase", 0): 7, ("oil_phase", 2): 9,
+    ("aqueous_phase", 1): 11, ("aqueous_phase", 2): 12, ("aqueous_phase", 3): 13,
+    ("coarse_emulsion", 0): 14,
+    ("ultrasonic", 1): 17, ("ultrasonic", 2): 18,
+    ("verification", 0): 20, ("verification", 1): 21, ("verification", 2): 22,
+    ("filling_packaging", 0): 23, ("filling_packaging", 1): 24,
+    ("post_run", 0): 25, ("post_run", 1): 26,
+}
+
+# ── NANO-ISOLATE COMPONENT (BPR-DNANO-001, 28 steps) — extended cell map (15,28) ──
+NANO_ISOLATE_PHASE_TO_STEPS = {
+    "sanitation_setup":    [1, 2, 3, 4, 5, 6],
+    "isolate_dissolution": [7, 8, 9, 10, 11],
+    "aqueous_phase":       [12, 13, 14, 15],
+    "coarse_emulsion":     [16, 17],
+    "ultrasonic":          [18, 19, 20, 21],
+    "verification":        [22, 23, 24],
+    "component_release":   [25, 26],
+    "post_run":            [27, 28],
+}
+NANO_ISOLATE_CCP_VALUES = {
+    ("sanitation_setup", 0): 1, ("sanitation_setup", 1): 2, ("sanitation_setup", 2): 3,
+    ("sanitation_setup", 3): 4, ("sanitation_setup", 4): 5,
+    ("isolate_dissolution", 0): 7, ("isolate_dissolution", 2): 9, ("isolate_dissolution", 3): 10,
+    ("aqueous_phase", 1): 13, ("aqueous_phase", 2): 14, ("aqueous_phase", 3): 15,
+    ("coarse_emulsion", 0): 16,
+    ("ultrasonic", 1): 19, ("ultrasonic", 2): 20,
+    ("verification", 0): 22, ("verification", 1): 23, ("verification", 2): 24,
+    ("component_release", 0): 25, ("component_release", 1): 26,
+    ("post_run", 0): 27, ("post_run", 1): 28,
+}
+
 # ── Per-family lookup registries ──
 PHASE_TO_STEPS_MAPS = {
     "gummies":                GUMMIES_PHASE_TO_STEPS,
@@ -1301,6 +1349,8 @@ PHASE_TO_STEPS_MAPS = {
     "dr_norms_brownie_sleep": DN_BROWNIE_SLEEP_PHASE_TO_STEPS,
     "vapes":                  VAPES_PHASE_TO_STEPS,
     "tempo_lr_vape":          TEMPO_LR_VAPE_PHASE_TO_STEPS,
+    "liquidabs":              LIQUIDABS_PHASE_TO_STEPS,
+    "nano_isolate":           NANO_ISOLATE_PHASE_TO_STEPS,
 }
 CCP_VALUES_MAPS = {
     "gummies":                GUMMIES_CCP_VALUES,
@@ -1323,6 +1373,8 @@ CCP_VALUES_MAPS = {
     "dr_norms_brownie_sleep": DN_BROWNIE_SLEEP_CCP_VALUES,
     "vapes":                  VAPES_CCP_VALUES,
     "tempo_lr_vape":          TEMPO_LR_VAPE_CCP_VALUES,
+    "liquidabs":              LIQUIDABS_CCP_VALUES,
+    "nano_isolate":           NANO_ISOLATE_CCP_VALUES,
 }
 # CANN maps only for families that capture cannabis weight in-production
 # (gummies/rosin_press). Everything else defaults to {} via .get() — their
