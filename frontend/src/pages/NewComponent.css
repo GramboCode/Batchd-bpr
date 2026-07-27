@@ -160,7 +160,80 @@
 .nc-submit:hover:not(:disabled) { background: #C01020; }
 .nc-submit:disabled { background: #E8A0A8; cursor: not-allowed; }
 
+.mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+
+.nc-card-intro { margin: 0 0 2px; font-size: 0.86rem; line-height: 1.45; color: #6A7089; }
+.nc-card-intro b { color: #1A1D2E; }
+
+/* Source-tag rows — a grid so column labels and inputs line up */
+.nc-src-head, .nc-src-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 110px 34px;
+  gap: 8px;
+  align-items: center;
+}
+.nc-src-head span {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8890A8;
+}
+
+.nc-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #F4F6FA;
+  border: 1.5px solid #E2E6EF;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-top: 4px;
+}
+.nc-total-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4A5068;
+}
+.nc-total-num { font-size: 1.3rem; font-weight: 900; font-variant-numeric: tabular-nums; color: #1A1D2E; }
+
+/* Lot ID preview — cream/amber card, mirrors the wash page's HASH preview */
+.nc-preview {
+  background: #FFFBEB;
+  border: 1.5px solid #FDE68A;
+  border-radius: 12px;
+  padding: 16px;
+}
+.nc-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.nc-preview-label, .nc-preview-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #B45309;
+}
+.nc-preview-id {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #1A1D2E;
+  background: #fff;
+  border: 1.5px solid #FCD34D;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.nc-preview-sub { margin-top: 8px; font-size: 0.76rem; color: #A16207; }
+
 @media (max-width: 560px) {
   .nc-row { flex-direction: column; align-items: stretch; }
   .nc-check { padding-bottom: 0; }
+  .nc-src-head { display: none; }
+  .nc-src-row { grid-template-columns: 1fr 1fr 90px 30px; }
 }
