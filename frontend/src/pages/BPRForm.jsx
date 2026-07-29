@@ -6,6 +6,7 @@ import Toast from "../components/Toast";
 import "./BPRForm.css";
 import SessionLogPhase from "../components/SessionLogPhase";
 import ComponentInputPanel from "./ComponentInputPanel";
+import EquipmentSanitationPanel from "../components/EquipmentSanitationPanel";
 
 export default function BPRForm({ bprData, setBprData, params, onComplete }) {
   const [phases, setPhases]           = useState([]);
@@ -240,6 +241,10 @@ export default function BPRForm({ bprData, setBprData, params, onComplete }) {
             initialConsumed={bprData.consumed_components || []}
           />
         )}
+
+        {/* Section 4 (equipment) + Section 5 (sanitation) for cell-mapped
+            families — renders nothing for wash/session/unmapped families. */}
+        <EquipmentSanitationPanel uid={uid} apiBase={API_BASE} family={family} />
 
         {phases.map((phase, i) => {
           const isSessionPhase = ["ice_water_wash", "freeze_drying", "sifting"].includes(phase.id);

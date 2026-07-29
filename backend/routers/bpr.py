@@ -17,7 +17,7 @@ into components.py's functions, so there's no circular import here.
 
 import json
 import os
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -35,6 +35,7 @@ from routers.components import (
     add_transaction as _add_transaction,
     get_component_type as _get_component_type,
     workflow_keys as _workflow_keys,
+    SanitationLogRequest,   # reused so the sanitation UI can serve wash + cell-mapped BPRs
 )
 
 router = APIRouter(tags=["bpr"])
@@ -74,6 +75,14 @@ class SupervisorReleaseRequest(BaseModel):
     supervisor_name: str
     deviation_notes: Optional[str] = None
     total_yield: Optional[str] = None
+
+class EquipmentCheckEntry(BaseModel):
+    row: int                          # Section 4 equipment row 1-9, matching the sheet
+    checked_by: Optional[str] = None  # operator who verified this specific equipment
+    time: Optional[str] = None        # "08:00" — defaults to server time if omitted
+
+class EquipmentCheckRequest(BaseModel):
+    entries: List[EquipmentCheckEntry]
 
 
 
@@ -669,6 +678,128 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
         "bpr": completed,
         "message": f"BPR released by {req.supervisor_name}"
     }
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /bpr/{uid}/sanitation  — Section 5 (cell-mapped families)
+# POST /bpr/{uid}/equipment   — Section 4 (cell-mapped families)
+# Non-wash counterparts to the wash's submit_wash_sanitation(). Both write to
+# the standardized cell map (SAN{i}_* / EQUIP{i}_*) via writeBPRFieldsByCellMap,
+# and both are PER-ROW by design: §17210(c)/§17221 rows name specific surfaces
+# and equipment, so each row must carry its own operator-entered attestation —
+# never a bulk stamp across every listed row.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Nano tabs (LiquiDabs / Nano Isolate) grew S4 to 12 rows and S5 to 11 rows —
+# their cell map (NANO_SECTION_OPTS in BPR.gs) shifts S5/S8 down accordingly.
+NANO_TEMPLATE_FAMILIES = {"liquidabs", "nano_isolate"}
+
+
+def _bpr_template_key_or_404(uid: str) -> tuple[dict, str]:
+    """Load the BPR record and resolve its cell-map templateKey, or raise."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM bpr_records WHERE uid = %s", (uid,))
+            rec = cur.fetchone()
+    finally:
+        conn.close()
+    if not rec:
+        raise HTTPException(404, "BPR not found")
+    rec = dict(rec)
+    template_key = PRODUCT_FAMILY_TO_TEMPLATE_KEY.get(rec.get("product_family"))
+    if not template_key:
+        raise HTTPException(400, f"No cell-map template for family {rec.get('product_family')}")
+    return rec, template_key
+
+
+@router.post("/bpr/{uid}/sanitation")
+async def submit_bpr_sanitation(uid: str, req: SanitationLogRequest):
+    """
+    Section 5 sanitation log for cell-mapped standardized BPRs. Reuses the wash
+    SanitationEntry model 1:1 so ONE frontend sanitation UI serves both paths;
+    only the destination differs (SAN{i}_* cell fields here vs WASH_S5_ROW{n}_*
+    named ranges on the wash sheet).
+    """
+    rec, template_key = _bpr_template_key_or_404(uid)
+    max_san = 11 if rec.get("product_family") in NANO_TEMPLATE_FAMILIES else 10
+
+    fields = {}
+    incomplete = []
+    for e in req.entries:
+        if not (1 <= e.row <= max_san):   # SAN: standard 1-10 (rows 59-68), nano 1-11 (62-72)
+            raise HTTPException(400, f"Invalid sanitation row: {e.row} (must be 1-{max_san})")
+        # Untouched rows are fine to skip — not every run cleans every surface.
+        # A PARTIALLY filled row is a §17210(c) violation, so reject those loudly.
+        if not any([e.date, e.clean_start, e.clean_end, e.passed, e.cleaned_by]):
+            continue
+        if not (e.date and e.clean_start and e.clean_end and e.cleaned_by):
+            incomplete.append(e.row)
+            continue
+        p = f"SAN{e.row}"
+        fields[p + "_DATE"]         = e.date
+        fields[p + "_CLEANSTART"]   = e.clean_start
+        fields[p + "_CLEANEND"]     = e.clean_end
+        fields[p + "_PPM"]          = e.ppm or ""
+        fields[p + "_STRIPSUSED"]   = e.strips_used or ""
+        fields[p + "_PASS"]         = e.passed or ""
+        fields[p + "_CLEANEDBY"]    = e.cleaned_by
+        fields[p + "_DRYBEFOREUSE"] = e.dry_before_use or ""
+
+    if incomplete:
+        raise HTTPException(400, {
+            "message": "Sanitation rows missing required fields (date, start, end, cleaned by are all required — §17210(c))",
+            "incomplete_rows": incomplete,
+        })
+    if not fields:
+        raise HTTPException(400, "No sanitation entries provided")
+
+    await _post_wash_gas({
+        "action":      "writeBPRFieldsByCellMap",
+        "uid":         uid,
+        "templateKey": template_key,
+        "fields":      fields,
+    }, f"BPR sanitation log ({rec.get('product_family')})")
+
+    return {"success": True, "rows_written": len(fields) // 8,
+            "message": "Sanitation log written to BPR sheet"}
+
+
+@router.post("/bpr/{uid}/equipment")
+async def submit_bpr_equipment(uid: str, req: EquipmentCheckRequest):
+    """
+    Section 4 equipment check-in for cell-mapped standardized BPRs. Per-row:
+    the operator confirms each specific equipment item, so we stamp only the
+    rows submitted with a checked_by — Checked By (col I) + Time (col J).
+    """
+    rec, template_key = _bpr_template_key_or_404(uid)
+    max_equip = 12 if rec.get("product_family") in NANO_TEMPLATE_FAMILIES else 9
+
+    from datetime import datetime, timezone   # local: datetime isn't imported module-wide
+    now_time = (fmt_ts(datetime.now(timezone.utc)) or "").split(" ", 1)[-1]  # time portion
+
+    fields = {}
+    for e in req.entries:
+        if not (1 <= e.row <= max_equip):   # EQUIP: standard 1-9 (rows 48-56), nano 1-12 (48-59)
+            raise HTTPException(400, f"Invalid equipment row: {e.row} (must be 1-{max_equip})")
+        if not e.checked_by:        # untouched row — skip
+            continue
+        p = f"EQUIP{e.row}"
+        fields[p + "_CHECKEDBY"] = e.checked_by
+        fields[p + "_TIME"]      = e.time or now_time
+
+    if not fields:
+        raise HTTPException(400, "No equipment check-ins provided")
+
+    await _post_wash_gas({
+        "action":      "writeBPRFieldsByCellMap",
+        "uid":         uid,
+        "templateKey": template_key,
+        "fields":      fields,
+    }, f"BPR equipment check-in ({rec.get('product_family')})")
+
+    return {"success": True, "rows_written": len(fields) // 2,
+            "message": "Equipment check-in written to BPR sheet"}
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /bpr/{uid}/status
@@ -1691,6 +1822,30 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         fields[cann_prefix + "_ACTUALQTY"]  = val
         fields[cann_prefix + "_WEIGHEDBY"]  = checked_by
         fields[cann_prefix + "_TIME"]       = checked_at[-8:] if checked_at else ""
+
+    # ── 3b. COA attestation → Section 2, row 1 (lightweight, ALL families) ──
+    # We deliberately do NOT re-key every component COA into every batch BPR:
+    # the source COA lives on the batch, and its potency is already captured via
+    # the CCP flow (lands on a STEP value cell). Section 2 only needs a CONCURRENT
+    # record that the COA was verified present, and by whom — §17216(c). So detect
+    # the standardized "COA confirmed/received" checklist step in this phase and
+    # stamp Cannabis row 1's Time + Verified By.
+    #
+    # ASSUMPTIONS (flagged intentionally): (1) always row 1 (CANN1) — the primary
+    # cannabis input; multi-source products (e.g. PBC-100 hash) would need a second
+    # row wired later. (2) setdefault, so any family with an explicit cann_value_map
+    # (richer CANN1 data above) wins over this fallback rather than double-writing.
+    import re as _re
+    _coa_re = _re.compile(r"COA (confirmed|received|verified)", _re.I)
+    for _idx, _text in enumerate(phase_def.get("steps", [])):
+        if not _coa_re.search(_text or ""):
+            continue
+        _sd = step_lookup.get(_idx, {})
+        if _sd.get("checked"):
+            _when = fmt_ts(_sd.get("checked_at")) or signed_at
+            fields.setdefault("CANN1_TIME",       _when or "")
+            fields.setdefault("CANN1_VERIFIEDBY", _sd.get("checked_by") or employee)
+        break
 
     if not fields:
         print(f"push_phase_to_gas_bpr: no mapped fields for phase {phase_id} [{product_family}]")
