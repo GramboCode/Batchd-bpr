@@ -658,6 +658,11 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
         finally:
             conn3.close()
         await push_wash_release_summary(uid, req.supervisor_name)
+    else:
+        # Cell-mapped standardized BPRs: write Section 3 yield (Expected/Actual)
+        # at release. The wash sheet handles its own Section 3 above via
+        # push_wash_release_summary; every other family lands here.
+        await push_release_summary_bpr(completed, req.supervisor_name, req.total_yield)
 
     return {
         "success": True,
@@ -1703,6 +1708,57 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
             print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
         print(f"GAS BPR write-back failed (non-fatal): {e}")
+
+
+async def push_release_summary_bpr(rec: dict, supervisor_name: str, total_yield):
+    """
+    Section 3 (Yield & Label Count) write-back for the CELL-MAPPED standardized
+    BPRs — the non-wash counterpart to push_wash_release_summary(), which only
+    handles the named-range wash sheet.
+
+    Writes the unit-yield row (Section 3 row 1 = sheet row 42) via the standard
+    cell-map fields resolved by buildStandardBPRCellMap() in BPR.gs:
+      • YIELD1_ACTUAL   ← total_yield captured at supervisor release (Final Qty, D42)
+      • YIELD1_EXPECTED ← the batch's Target Qty from UID_TRACKER  (Expected,   C42)
+      • YIELD1_INITIALS ← supervisor (J42);  YIELD1_TIME ← release timestamp (K42)
+
+    Fire-and-forget (via _post_wash_gas): a Sheets or tracker-read hiccup can
+    never block or fail a release that has already committed.
+    """
+    product_family = rec.get("product_family")
+    template_key = PRODUCT_FAMILY_TO_TEMPLATE_KEY.get(product_family)
+    if not template_key:
+        print(f"release summary: no template key for {product_family} — skipping S3 write")
+        return
+
+    from datetime import datetime, timezone   # local: datetime isn't imported module-wide
+    fields = {
+        "YIELD1_ACTUAL":   total_yield or "",
+        "YIELD1_INITIALS": supervisor_name,
+        "YIELD1_TIME":     fmt_ts(datetime.now(timezone.utc)) or "",
+    }
+
+    # Expected (Target) lives on UID_TRACKER, keyed by the source METRC tag.
+    # Ideally C42 is also stamped at sheet-creation time so operators see the
+    # target BEFORE production; sending it here as well guarantees it's filled
+    # even on sheets created before that creation-time wiring exists.
+    try:
+        mu = rec.get("metrc_uid")
+        if mu:
+            from sheets_client import get_sheets_client
+            batch = get_sheets_client().get_batch_by_uid(mu)
+            if batch and batch.get("targetQty") not in (None, ""):
+                fields["YIELD1_EXPECTED"] = batch["targetQty"]
+    except Exception as e:
+        print(f"release summary: target-qty lookup failed (non-fatal): {e}")
+
+    await _post_wash_gas({
+        "action":      "writeBPRFieldsByCellMap",
+        "uid":         rec["uid"],
+        "templateKey": template_key,
+        "fields":      fields,
+    }, f"BPR release summary ({product_family})")
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ROSIN WASH → GOOGLE SHEET WRITE-BACK

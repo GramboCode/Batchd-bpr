@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <base target="_top">
+<script>
+  (function() {
+    var t = localStorage.getItem('punch_theme') || 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Batch — Punch Tools</title>
+  <script>
+    var DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbxJpIgvk2ghXgG2GZCIYCFoQwSLrT2SVCaoKG3-T4X2rbJnsAi37XjvStrfaQeKNj6u/exec';
+    function navigate(page, params) {
+      var url = DEPLOY_URL + '?page=' + page;
+      if (params) url += '&' + params;
+      try { window.top.location.href = url; } catch(e) { window.location.href = url; }
+    }
+  </script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* ── THEME SYSTEM ─────────────────────────────── */
+  :root, [data-theme="light"] {
+    --punch-red:     #E8192C;
+    --punch-red-dk:  #C01020;
+    --display:       'Arial Narrow', Arial, sans-serif;
+    --body:          -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono:          'Courier New', monospace;
+    --radius:        6px;
+    --radius-lg:     10px;
+    --bg:            #F4F6FA;
+    --bg2:           #FFFFFF;
+    --bg3:           #F0F2F7;
+    --bg4:           #E8EBF2;
+    --border:        #E2E6EF;
+    --border2:       #D0D5E3;
+    --border3:       #B8BECE;
+    --text:          #0F1117;
+    --text2:         #4A5068;
+    --text3:         #8890A8;
+    --green:         #0A7A3E;
+    --blue:          #1A56DB;
+    --amber:         #B45309;
+    --punch-gold:    #B45309;
+    --punch-gold-dk: #92420A;
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg:       #0a0a0b;
+    --bg2:      #111214;
+    --bg3:      #1a1c1f;
+    --bg4:      #222428;
+    --border:   #232528;
+    --border2:  #2e3035;
+    --border3:  #3a3d44;
+    --text:     #f0f0f2;
+    --text2:    #8a8d97;
+    --text3:    #4a4d56;
+    --green:    #39d87a;
+    --blue:     #3d9eff;
+    --amber:    #f5a623;
+    --punch-gold:    #f5a623;
+    --punch-gold-dk: #d4891a;
+    --shadow-sm: none;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 17px; }
+
+  body {
+    font-family: var(--body);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 { font-family: var(--display); font-size: 2.6rem; font-weight: 900; letter-spacing: -0.01em; text-transform: uppercase; line-height: 0.95; }
+  h2 { font-family: var(--display); font-size: 1.6rem; font-weight: 800; text-transform: uppercase; }
+  h3 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+
+  .mono  { font-family: var(--mono); }
+  .muted { color: var(--text2); }
+  .red   { color: var(--punch-red); }
+  .gold  { color: var(--punch-gold); }
+
+  .prefix-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .prefix-row:last-child { border-bottom: none; }
+  .prefix-row:hover { background: var(--bg3); }
+  /* APP SHELL */
+  .app-shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+  /* TOPBAR */
+  .topbar { background: var(--bg2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+  .topbar-inner { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 56px; max-width: 1280px; margin: 0 auto; }
+
+  .topbar-brand { display: flex; align-items: center; text-decoration: none; }
+  .brand-block  { background: var(--punch-red); padding: 6px 12px 5px; border-radius: var(--radius) 0 0 var(--radius); }
+  .brand-block span { font-family: var(--display); font-size: 1rem; font-weight: 900; color: white; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; display: block; }
+  .brand-sub    { background: var(--bg3); border: 1px solid var(--border2); border-left: none; padding: 6px 12px 5px; border-radius: 0 var(--radius) var(--radius) 0; }
+  .brand-sub span { font-family: var(--display); font-size: 0.75rem; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; line-height: 1; display: block; }
+
+  .topbar-nav { display: flex; align-items: center; gap: 2px; }
+  .topbar-nav a { font-family: var(--display); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); text-decoration: none; padding: 7px 14px; border-radius: var(--radius); transition: all 0.12s; }
+  .topbar-nav a:hover  { color: var(--text); background: var(--bg3); }
+  .topbar-nav a.active { color: white; background: var(--punch-red); }
+
+  /* PAGE */
+  .page { padding: 28px 24px 48px; max-width: 1280px; margin: 0 auto; width: 100%; }
+
+  .page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; gap: 16px; flex-wrap: wrap; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .page-header .eyebrow { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--punch-red); margin-bottom: 6px; }
+
+  /* STAT CARDS */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; margin-bottom: 28px; }
+
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 18px 16px; position: relative; overflow: hidden; transition: border-color 0.15s; animation: fadeUp 0.35s ease both; }
+  .stat-card:hover { border-color: var(--border3); }
+  .stat-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--punch-red); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease; }
+  .stat-card:hover::after { transform: scaleX(1); }
+  .stat-card .stat-label { font-family: var(--display); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 10px; }
+  .stat-card .stat-value { font-family: var(--display); font-size: 2.4rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1; color: var(--text); }
+  .stat-card.danger  .stat-value { color: var(--punch-red); }
+  .stat-card.warning .stat-value { color: var(--amber); }
+  .stat-card.success .stat-value { color: var(--green); }
+  .stat-card.info    .stat-value { color: var(--blue); }
+
+  /* TOOLBAR */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+
+  /* INPUTS */
+  .input-wrap { position: relative; flex: 1; min-width: 200px; }
+  .input-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 0.9rem; pointer-events: none; }
+
+  input[type="text"], input[type="date"], input[type="number"], textarea, select {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius);
+    color: var(--text); font-family: var(--body); font-size: 0.88rem; padding: 9px 12px;
+    width: 100%; outline: none; transition: border-color 0.15s, background 0.15s;
+    -webkit-appearance: none; appearance: none;
+  }
+  .input-wrap input { padding-left: 34px; }
+  input:focus, textarea:focus, select:focus { border-color: var(--punch-red); background: var(--bg3); }
+  input::placeholder, textarea::placeholder { color: var(--text3); }
+  select option { background: var(--bg2); }
+  textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+  .field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field-group label { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 18px; border-radius: var(--radius); font-family: var(--display); font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border: 1px solid transparent; transition: all 0.12s; white-space: nowrap; text-decoration: none; line-height: 1; }
+  .btn-primary { background: var(--punch-red); color: white; border-color: var(--punch-red); }
+  .btn-primary:hover { background: var(--punch-red-dk); border-color: var(--punch-red-dk); }
+  .btn-ghost   { background: transparent; color: var(--text2); border-color: var(--border2); }
+  .btn-ghost:hover { background: var(--bg3); color: var(--text); border-color: var(--border3); }
+  .btn-gold    { background: var(--punch-gold); color: #0a0a0b; border-color: var(--punch-gold); }
+  .btn-gold:hover { background: var(--punch-gold-dk); border-color: var(--punch-gold-dk); }
+  .btn-danger  { background: transparent; color: var(--punch-red); border-color: var(--punch-red); }
+  .btn-danger:hover { background: var(--punch-red); color: white; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+  .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+
+  /* TABLE */
+  .table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .table-header { display: grid; grid-template-columns: 2fr 1.3fr 0.8fr 0.9fr 1.1fr 60px; padding: 9px 20px; background: var(--bg3); border-bottom: 1px solid var(--border); font-family: var(--display); font-size: 0.68rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .batch-row { display: grid; grid-template-columns: 2fr 1.3fr 0.8fr 0.9fr 1.1fr 60px; padding: 13px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; align-items: center; animation: fadeUp 0.3s ease both; }
+  .batch-row:last-child { border-bottom: none; }
+  .batch-row:hover { background: var(--bg3); }
+  .batch-row:hover .row-arrow { color: var(--punch-red); transform: translateX(3px); }
+  .row-arrow { color: var(--text3); font-size: 0.9rem; transition: all 0.15s; text-align: right; }
+
+  .product-name { font-family: var(--display); font-size: 1rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; line-height: 1.2; }
+  .product-uid  { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .batch-id-cell { font-family: var(--mono); font-size: 0.75rem; color: var(--text2); }
+  .lab-cell  { font-family: var(--display); font-size: 0.82rem; font-weight: 600; color: var(--text2); text-transform: uppercase; }
+  .date-cell { font-size: 0.82rem; color: var(--text2); font-family: var(--mono); }
+
+  /* BADGES */
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 2px; border-radius: 4px; font-family: var(--display); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; line-height: 1.4; }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .badge-production { color: var(--amber);    background: rgba(245,166,35,0.12); }
+  .badge-testing    { color: var(--blue);     background: rgba(61,158,255,0.12); }
+  .badge-labels     { color: var(--punch-red);background: rgba(232,25,44,0.12); }
+  .badge-complete   { color: var(--green);    background: rgba(57,216,122,0.12); }
+  .badge-rnd        { color: #c084fc;         background: rgba(192,132,252,0.12); }
+  .badge-default    { color: var(--text2);    background: var(--bg3); }
+
+  /* CARD */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-body   { padding: 20px; }
+  .card-accent { border-left: 3px solid var(--punch-red); }
+
+  /* UTILS */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  .empty-state { padding: 56px 20px; text-align: center; }
+  .empty-icon  { font-family: var(--display); font-size: 3rem; font-weight: 900; color: var(--border2); text-transform: uppercase; letter-spacing: -0.02em; line-height: 1; margin-bottom: 12px; }
+  .empty-state p { color: var(--text3); font-size: 0.88rem; }
+
+  .loading { padding: 40px; text-align: center; color: var(--text3); font-size: 0.82rem; font-family: var(--display); text-transform: uppercase; letter-spacing: 0.08em; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border2); border-top-color: var(--punch-red); border-radius: 50%; animation: spin 0.65s linear infinite; vertical-align: middle; margin-right: 8px; }
+
+  .result-count { font-family: var(--display); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-top: 10px; }
+
+  .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast { padding: 11px 16px; border-radius: var(--radius); font-family: var(--display); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); animation: slideIn 0.18s ease; max-width: 300px; pointer-events: all; }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error   { border-left: 3px solid var(--punch-red); }
+  .toast.info    { border-left: 3px solid var(--blue); }
+  .toast.warning { border-left: 3px solid var(--amber); }
+
+  .toggle-label { display: flex; align-items: center; gap: 7px; font-family: var(--display); font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text2); cursor: pointer; white-space: nowrap; user-select: none; }
+  .toggle-label input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--punch-red); cursor: pointer; }
+
+  /* ANIMATIONS */
+  @keyframes fadeUp  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin    { to   { transform: rotate(360deg); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .page { padding: 16px 14px 40px; }
+    h1 { font-size: 2rem; }
+    .table-header { display: none; }
+    .batch-row { grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 4px 8px; padding: 12px 14px; }
+    .batch-row > *:nth-child(2), .batch-row > *:nth-child(3), .batch-row > *:nth-child(4) { display: none; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .topbar-nav { display: none; }
+  }
+</style>  <style>
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .product-tile {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.12s;
+      background: var(--bg3);
+    }
+    .product-tile:hover { border-color: var(--border3); background: var(--bg4); }
+    .product-tile.selected { border-color: var(--punch-red); background: rgba(232,25,44,0.08); }
+    .product-tile .tile-brand {
+      font-family: var(--display); font-size: 0.62rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 3px;
+    }
+    .product-tile.selected .tile-brand { color: var(--punch-red); }
+    .product-tile .tile-name {
+      font-family: var(--display); font-size: 0.88rem; font-weight: 700;
+      text-transform: uppercase; color: var(--text); line-height: 1.2;
+    }
+    .product-group-label {
+      font-family: var(--display); font-size: 0.68rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3);
+      margin: 14px 0 8px; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .product-group-label:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+    .uid-bar {
+      background: var(--bg3); border: 1px solid var(--border2);
+      border-radius: var(--radius); padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .uid-bar .uid-val { font-family: var(--mono); font-size: 0.8rem; color: var(--text); }
+    .uid-badge-ok { font-family: var(--display); font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--green); background: rgba(57,216,122,0.1); padding: 2px 8px; border-radius: 4px; }
+    .uid-badge-err { font-family: var(--display); font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--punch-red); background: rgba(232,25,44,0.1); padding: 2px 8px; border-radius: 4px; }
+    .generated-name-box {
+      background: var(--bg3); border: 1px solid var(--border2);
+      border-radius: var(--radius); padding: 12px 14px; margin-top: 16px;
+    }
+    .generated-name-box .gen-label {
+      font-family: var(--display); font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 6px;
+    }
+    .generated-name-box .gen-name {
+      font-family: var(--mono); font-size: 0.82rem; color: var(--text); line-height: 1.4;
+    }
+    .generated-name-box .gen-meta {
+      font-size: 0.72rem; color: var(--text3); margin-top: 5px;
+    }
+    .step-label {
+      font-family: var(--display); font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.12em; color: var(--punch-red);
+      margin-bottom: 8px; display: block;
+    }
+    .success-wrap {
+      display: none; flex-direction: column; align-items: center;
+      text-align: center; padding: 48px 24px; gap: 14px;
+    }
+    .success-wrap.show { display: flex; }
+    .success-check {
+      font-family: var(--display); font-size: 4rem; font-weight: 900;
+      color: var(--green); line-height: 1;
+    }
+    .success-chip {
+      font-family: var(--mono); font-size: 0.72rem; color: var(--text3);
+      background: var(--bg3); border: 1px solid var(--border2);
+      padding: 4px 12px; border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="javascript:void(0)" onclick="navigate('index')" class="topbar-brand">
+        <div class="brand-block"><span>Punch</span></div>
+        <div class="brand-sub"><span>Tools</span></div>
+      </a>
+      <nav class="topbar-nav">
+        <a href="javascript:void(0)" onclick="navigate('index')">Dashboard</a>
+        <a href="javascript:void(0)" onclick="navigate('create')" class="active">New Batch</a>
+        <a href="javascript:void(0)" onclick="navigate('import')">Import Tags</a>
+      </nav>
+      <button onclick="(function(){var t=document.documentElement.getAttribute('data-theme');var n=t==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('punch_theme',n);document.getElementById('themeBtn').textContent=n==='light'?'\u263D':'\u2600';})()" id="themeBtn" style="background:var(--bg3);border:1.5px solid var(--border2);border-radius:6px;padding:6px 11px;cursor:pointer;font-size:1rem;line-height:1;color:var(--text2);" title="Toggle theme">&#9790;</button>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <div class="page-header">
+      <div>
+        <div class="eyebrow">Batch Creation</div>
+        <h1>New Batch</h1>
+      </div>
+      <a href="javascript:void(0)" onclick="navigate('index')" class="btn btn-ghost">← Dashboard</a>
+    </div>
+
+    <!-- UID Bar -->
+    <div style="font-family:var(--display); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--text3); margin-bottom:6px;">Next Available METRC Tag</div>
+    <div class="uid-bar">
+      <span class="uid-val" id="uidVal">Loading...</span>
+      <span id="uidBadge" class="uid-badge-ok" style="opacity:0.4">Checking</span>
+    </div>
+
+    <div class="card" id="mainCard">
+      <div class="card-body">
+
+        <!-- Step 1: Product Type -->
+        <span class="step-label">Step 1 — Select product type</span>
+        <div id="productGrid"></div>
+
+        <!-- Step 2: Variable Fields (shown after selection) -->
+        <div id="step2" style="display:none; margin-top:20px;">
+          <div style="height:1px; background:var(--border); margin-bottom:20px;"></div>
+          <span class="step-label">Step 2 — Fill in the details</span>
+
+          <div class="form-grid" id="variableFields" style="display:grid; grid-template-columns:1fr 1fr; gap:0 20px;"></div>
+
+          <!-- Step 3: Batch ID + Date -->
+          <div style="height:1px; background:var(--border); margin:16px 0;"></div>
+          <span class="step-label">Step 3 — Batch ID &amp; Date</span>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 20px;">
+            <div class="field-group" style="position:relative;">
+                <label for="fieldBatchID">Batch ID *</label>
+                <div style="position:relative;">
+                  <input type="text" id="fieldBatchID" placeholder="e.g. TCAVSTRBTZ005"
+                    style="font-family:var(--mono); text-transform:uppercase;" autocomplete="off"
+                    oninput="this.value=this.value.toUpperCase(); onBatchIDInput(this.value)"
+                    onblur="hidePrefixDropdown()"
+                    onfocus="if(this.value.length>=3) onBatchIDInput(this.value)">
+                  <div id="prefixDropdown" style="
+                    display:none; position:absolute; top:100%; left:0; right:0; z-index:999;
+                    background:var(--bg2); border:1px solid var(--border2);
+                    border-top:none; border-radius:0 0 var(--radius) var(--radius);
+                    box-shadow:0 8px 24px rgba(0,0,0,0.4); max-height:280px; overflow-y:auto;">
+                  </div>
+                </div>
+                <div id="batchIDStatus" style="min-height:22px; margin-top:4px;"></div>
+              </div>
+              <div class="field-group">
+                <label for="fieldMfgDate">Mfg / Pkg Date *</label>
+                <input type="date" id="fieldMfgDate">
+              </div>
+              <div class="field-group">
+                <label for="fieldQty">Target Quantity</label>
+                <input type="number" id="fieldQty" placeholder="e.g. 1150" min="0">
+              </div>
+              <div class="field-group">
+                <label for="fieldLab">Testing Lab</label>
+                <select id="fieldLab">
+                  <option value="">Select lab...</option>
+                </select>
+              </div>
+            </div>
+
+          <!-- Generated name preview -->
+          <div class="generated-name-box" id="namePreview" style="display:none;">
+            <div class="gen-label">Generated product name</div>
+            <div class="gen-name" id="genName">—</div>
+            <div class="gen-meta" id="genMeta">—</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div id="progressWrap" style="display:none; padding:16px 20px; border-top:1px solid var(--border); background:var(--bg3);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <span id="progressLabel" style="font-family:var(--display); font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text2);">Processing...</span>
+          <span id="progressPct" style="font-family:var(--mono); font-size:0.72rem; color:var(--text3);">0%</span>
+        </div>
+        <div style="height:4px; background:var(--border); border-radius:2px; overflow:hidden;">
+          <div id="progressBar" style="height:100%; width:0%; background:var(--punch-red); border-radius:2px; transition:width 0.4s ease;"></div>
+        </div>
+      </div>
+
+      <!-- Form actions -->
+      <div id="formActions" style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-top:1px solid var(--border); background:var(--bg3);">
+        <p style="font-size:0.78rem; color:var(--text3);">* Required fields</p>
+        <div style="display:flex; gap:8px;">
+          <a href="javascript:void(0)" onclick="navigate('index')" class="btn btn-ghost">Cancel</a>
+          <button class="btn btn-primary" id="submitBtn" onclick="submitForm()" disabled>
+            Create Batch
+          </button>
+        </div>
+      </div>
+
+      <!-- Success state -->
+      <div class="success-wrap" id="successWrap">
+        <div class="success-check">✓</div>
+        <h2 id="successName" style="text-transform:uppercase; font-size:1.4rem;"></h2>
+        <div class="success-chip" id="successChip"></div>
+        <p class="muted" style="font-size:0.85rem;">Batch created and UID assigned.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px;">
+          <button class="btn btn-primary" onclick="createAnother()">+ New Batch</button>
+          <button class="btn btn-ghost" onclick="navigate('batch','uid='+encodeURIComponent(createdUID))">View Batch →</button>
+          <a href="javascript:void(0)" onclick="navigate('index')" class="btn btn-ghost">Dashboard</a>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+<div class="toast-container" id="toastContainer"></div>
+<script>
+// ── PRODUCT TEMPLATES (loaded from server) ──────────────────────────────────
+var TEMPLATES = {}; // populated by serverGetTemplates() on load
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+var selectedType = null;
+var nextUID = null;
+var createdUID = null;
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+window.onload = function() {
+  document.getElementById("fieldMfgDate").value = new Date().toISOString().split("T")[0];
+  // Load templates from server first, then build UI
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        TEMPLATES = result.templates || {};
+        // Also update lab dropdown
+        var labSel = document.getElementById("fieldLab");
+        if (labSel && result.labs && result.labs.length) {
+          labSel.innerHTML = '<option value="">Select lab...</option>' +
+            result.labs.map(function(l){
+              return '<option>'+l+'</option>';
+            }).join("");
+        }
+      }
+      buildProductGrid();
+      loadNextUID();
+    })
+    .withFailureHandler(function() {
+      // Fall through with empty templates — better than crashing
+      buildProductGrid();
+      loadNextUID();
+    })
+    .serverGetTemplates();
+};
+
+// ── PATTERN-BASED NAME BUILDER ───────────────────────────────────────────────
+// Server templates use {placeholder} syntax in their pattern field
+// e.g. "Punch - Live Rosin - {strain} - {format} (1g) - {tier}"
+function buildNameFromPattern(t, f) {
+  // If template has a JS buildName function (legacy), use it
+  if (typeof t.buildName === "function") return t.buildName(f);
+
+  var pattern = t.pattern || "[Product Name]";
+  var strain  = f.strain || "[Strain]";
+  var tier    = f.tier   || t.defaultTier || "Tier 4";
+  var format  = f.format || t.defaultFormat || "";
+  var collab  = f.collab || t.defaultCollab || "";
+  var effect  = f.effect || t.defaultEffect || "Hybrid";
+
+  // ── Special case: Live Rosin format branching ──────────────
+  // Badder:      "Punch - Live Rosin - {strain} - Badder (1g) - {tier}"
+  // Fresh Press: "Punch - Live Rosin - {strain} (1g) - {tier}"
+  if (pattern.indexOf("{format}") >= 0 && pattern.indexOf("{tier}") >= 0 &&
+      pattern.indexOf("Live Rosin") >= 0) {
+    if (format === "Fresh Press") {
+      return "Punch - Live Rosin - " + strain + " (1g) - " + tier;
+    } else {
+      return "Punch - Live Rosin - " + strain + " - Badder (1g) - " + tier;
+    }
+  }
+
+  // ── Standard substitution ──────────────────────────────────
+  return pattern
+    .replace("{strain}", strain)
+    .replace("{flavor}", f.flavor || "[Flavor]")
+    .replace("{format}", format)
+    .replace("{tier}",   tier)
+    .replace("{collab}", collab)
+    .replace("{effect}", effect);
+}
+
+// ── PRODUCT GRID ─────────────────────────────────────────────────────────────
+// ── PRODUCT GRID (grouped by brand) ──────────────────────────
+var BRAND_ORDER = ["Punch", "Tempo", "Dr. Norm's"];
+
+function buildProductGrid() {
+  var grid = document.getElementById("productGrid");
+
+  // Group template keys by brand
+  var byBrand = {};
+  Object.keys(TEMPLATES).forEach(function(key) {
+    var t = TEMPLATES[key];
+    var brand = t.brand || "Other";
+    if (!byBrand[brand]) byBrand[brand] = [];
+    byBrand[brand].push(key);
+  });
+
+  // Sort each brand's tiles alphabetically by label
+  Object.keys(byBrand).forEach(function(brand) {
+    byBrand[brand].sort(function(a, b) {
+      return TEMPLATES[a].label.localeCompare(TEMPLATES[b].label);
+    });
+  });
+
+  // Render brands in BRAND_ORDER; any unlisted brand falls in alphabetically after
+  var knownBrands   = BRAND_ORDER.filter(function(b) { return byBrand[b]; });
+  var unknownBrands = Object.keys(byBrand)
+    .filter(function(b) { return BRAND_ORDER.indexOf(b) === -1; })
+    .sort();
+  var brands = knownBrands.concat(unknownBrands);
+
+  var html = "";
+  brands.forEach(function(brand) {
+    html += '<div class="product-group-label">' + escHtml(brand) + '</div>';
+    html += '<div class="product-grid">';
+    byBrand[brand].forEach(function(key) {
+      var t = TEMPLATES[key];
+      html += '<div class="product-tile" id="tile_'+key+'" onclick="selectType(\''+key+'\')">';
+      html += '<div class="tile-brand">'+escHtml(t.brand)+'</div>';
+      html += '<div class="tile-name">'+escHtml(t.label)+'</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  grid.innerHTML = html;
+}
+
+// ── SELECT PRODUCT TYPE ───────────────────────────────────────────────────────
+function selectType(key) {
+  selectedType = key;
+  var t = TEMPLATES[key];
+
+  // Update tile selection
+  Object.keys(TEMPLATES).forEach(function(k) {
+    var el = document.getElementById("tile_"+k);
+    if (el) el.classList.toggle("selected", k === key);
+  });
+
+  // Build variable fields
+  var fieldsHTML = "";
+
+  if (t.fields.indexOf("strain") >= 0) {
+    fieldsHTML += '<div class="field-group">';
+    fieldsHTML += '<label>Strain / Flavor Name <span style="color:var(--punch-red)">*</span></label>';
+    fieldsHTML += '<input type="text" id="fStrain" placeholder="'+escHtml(t.hint||"Enter strain/flavor...")+'..." autocomplete="off" oninput="updatePreview()">';
+    fieldsHTML += '</div>';
+  }
+
+  if (t.fields.indexOf("flavor_select") >= 0) {
+    var opts = (t.flavors||[]).map(function(f){ return '<option>'+escHtml(f)+'</option>'; }).join("");
+    fieldsHTML += '<div class="field-group" style="grid-column:1/-1">';
+    fieldsHTML += '<label>Flavor / SKU <span style="color:var(--punch-red)">*</span></label>';
+    fieldsHTML += '<select id="fFlavor" onchange="updatePreview()"><option value="">Select...</option>'+opts+'</select>';
+    fieldsHTML += '</div>';
+  }
+
+  if (t.fields.indexOf("format") >= 0) {
+    var opts = (t.formats||[]).map(function(f){
+      return '<option'+(f===t.defaultFormat?' selected':'')+'>'+escHtml(f)+'</option>';
+    }).join("");
+    fieldsHTML += '<div class="field-group">';
+    fieldsHTML += '<label>Format</label>';
+    fieldsHTML += '<select id="fFormat" onchange="updatePreview()">'+opts+'</select>';
+    fieldsHTML += '</div>';
+  }
+
+  if (t.fields.indexOf("tier") >= 0) {
+    var opts = (t.tiers||[]).map(function(f){
+      return '<option'+(f===t.defaultTier?' selected':'')+'>'+escHtml(f)+'</option>';
+    }).join("");
+    fieldsHTML += '<div class="field-group">';
+    fieldsHTML += '<label>Tier</label>';
+    fieldsHTML += '<select id="fTier" onchange="updatePreview()">'+opts+'</select>';
+    fieldsHTML += '</div>';
+  }
+
+  if (t.fields.indexOf("collab") >= 0) {
+    var opts = (t.collabs||[]).map(function(f){
+      return '<option'+(f===t.defaultCollab?' selected':'')+'>'+escHtml(f)+'</option>';
+    }).join("");
+    fieldsHTML += '<div class="field-group">';
+    fieldsHTML += '<label>Collab</label>';
+    fieldsHTML += '<select id="fCollab" onchange="updatePreview()">'+opts+'</select>';
+    fieldsHTML += '</div>';
+  }
+
+  if (t.fields.indexOf("effect") >= 0) {
+    var opts = (t.effects||[]).map(function(f){
+      return '<option'+(f===t.defaultEffect?' selected':'')+'>'+escHtml(f)+'</option>';
+    }).join("");
+    fieldsHTML += '<div class="field-group">';
+    fieldsHTML += '<label>Effect / Type</label>';
+    fieldsHTML += '<select id="fEffect" onchange="updatePreview()">'+opts+'</select>';
+    fieldsHTML += '</div>';
+  }
+
+  document.getElementById("variableFields").innerHTML = fieldsHTML;
+  document.getElementById("step2").style.display = "block";
+  document.getElementById("namePreview").style.display = "block";
+  document.getElementById("submitBtn").disabled = false;
+
+  updatePreview();
+}
+
+// ── UPDATE NAME PREVIEW ───────────────────────────────────────────────────────
+function updatePreview() {
+  if (!selectedType) return;
+  var t = TEMPLATES[selectedType];
+
+  var f = {
+    strain:  getVal("fStrain"),
+    flavor:  getVal("fFlavor"),
+    format:  getVal("fFormat"),
+    tier:    getVal("fTier"),
+    collab:  getVal("fCollab"),
+    effect:  getVal("fEffect")
+  };
+
+  var name = buildNameFromPattern(t, f);
+  document.getElementById("genName").textContent = name;
+  document.getElementById("genMeta").textContent =
+    "Category: " + t.category + "  ·  UoM: " + t.uom;
+}
+
+// ── LOAD NEXT UID ────────────────────────────────────────────────────────────
+function loadNextUID() {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.uid) {
+        nextUID = result.uid;
+        document.getElementById("uidVal").textContent = result.uid;
+        document.getElementById("uidBadge").textContent = "Available";
+        document.getElementById("uidBadge").className = "uid-badge-ok";
+      } else {
+        document.getElementById("uidVal").textContent = "No tags available";
+        document.getElementById("uidBadge").textContent = "Import tags first";
+        document.getElementById("uidBadge").className = "uid-badge-err";
+      }
+    })
+    .withFailureHandler(function() {
+      document.getElementById("uidVal").textContent = "Error loading UID";
+      document.getElementById("uidBadge").textContent = "Error";
+      document.getElementById("uidBadge").className = "uid-badge-err";
+    })
+    .serverGetNextUID();
+}
+
+// ── BATCH ID — PREFIX SEARCH + LIVE CHECK ────────────────────
+var batchInputTimer   = null;
+var batchCheckTimer   = null;
+var lastCheckedID     = '';
+var lastSearchedPrefix = '';
+var dropdownVisible   = false;
+
+function onBatchIDInput(value) {
+  clearTimeout(batchInputTimer);
+  clearTimeout(batchCheckTimer);
+
+  var statusEl   = document.getElementById("batchIDStatus");
+  var dropdownEl = document.getElementById("prefixDropdown");
+
+  if (!value || value.length < 3) {
+    statusEl.innerHTML = '';
+    hidePrefixDropdown();
+    return;
+  }
+
+  // Debounce both calls together
+  batchInputTimer = setTimeout(function() {
+
+    // 1. Live availability check
+    if (value !== lastCheckedID) {
+      lastCheckedID = value;
+      statusEl.innerHTML = '<span style="font-size:0.72rem; color:var(--text3); font-family:var(--display); text-transform:uppercase; letter-spacing:0.06em;">Checking...</span>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          renderBatchIDStatus(value, result);
+        })
+        .withFailureHandler(function() { statusEl.innerHTML = ''; })
+        .serverCheckBatchID(value);
+    }
+
+    // 2. Prefix search dropdown
+    if (value !== lastSearchedPrefix) {
+      lastSearchedPrefix = value;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          renderPrefixDropdown(value, result.matches || []);
+        })
+        .withFailureHandler(function() { hidePrefixDropdown(); })
+        .serverSearchBatchPrefix(value);
+    }
+
+  }, 400);
+}
+
+function renderPrefixDropdown(typedValue, matches) {
+  var dropdownEl = document.getElementById("prefixDropdown");
+  var currentVal = document.getElementById("fieldBatchID").value;
+  if (currentVal !== typedValue || matches.length === 0) {
+    hidePrefixDropdown();
+    return;
+  }
+
+  var html = '';
+  matches.forEach(function(m) {
+    var statusColor = getStatusColor(m.status);
+    var paddingNum  = m.nextBatchID ? m.nextBatchID : '—';
+
+    html += '<div class="prefix-row" onmousedown="selectPrefix(event, \'' + escHtml(m.nextBatchID || m.latestBatchID) + '\')">';
+
+    // Left: prefix + item name
+    html += '<div style="flex:1; min-width:0;">';
+    html += '<div style="font-family:var(--mono); font-size:0.78rem; font-weight:700; color:var(--text);">';
+    html += escHtml(m.alphaPrefix) + '<span style="color:var(--text3);">###</span>';
+    html += '</div>';
+    html += '<div style="font-size:0.75rem; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;">';
+    html += escHtml(m.item);
+    html += '</div>';
+    html += '</div>';
+
+    // Right: last batch + status + next suggestion
+    html += '<div style="text-align:right; flex-shrink:0; margin-left:12px;">';
+    html += '<div style="font-family:var(--mono); font-size:0.7rem; color:var(--text3);">Last: '+escHtml(m.latestBatchID)+'</div>';
+    html += '<div style="font-size:0.68rem; font-family:var(--display); font-weight:700; text-transform:uppercase; color:'+statusColor+'; margin-top:2px;">'+escHtml(m.status)+'</div>';
+    if (m.nextBatchID) {
+      html += '<div style="font-family:var(--mono); font-size:0.72rem; color:var(--blue); margin-top:3px; font-weight:700;">→ '+escHtml(m.nextBatchID)+'</div>';
+    }
+    html += '</div>';
+
+    html += '</div>'; // prefix-row
+  });
+
+  dropdownEl.innerHTML = html;
+  dropdownEl.style.display = 'block';
+  dropdownVisible = true;
+}
+
+function selectPrefix(event, nextBatchID) {
+  event.preventDefault(); // prevent blur from firing first
+  var input = document.getElementById("fieldBatchID");
+  input.value = nextBatchID;
+  hidePrefixDropdown();
+  lastCheckedID = '';
+  onBatchIDInput(nextBatchID);
+}
+
+function hidePrefixDropdown() {
+  var dropdownEl = document.getElementById("prefixDropdown");
+  dropdownEl.style.display = 'none';
+  dropdownVisible = false;
+}
+
+function renderBatchIDStatus(batchID, result) {
+  var statusEl  = document.getElementById("batchIDStatus");
+  var currentVal = document.getElementById("fieldBatchID").value;
+  if (currentVal !== batchID) return;
+
+  if (result.available === null) { statusEl.innerHTML = ''; return; }
+
+  if (result.available) {
+    statusEl.innerHTML = '<span style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--green);">✓ Available</span>';
+    return;
+  }
+
+  var html = '<span style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--punch-red);">✕ Taken';
+  if (result.assignedTo) {
+    html += ' — <span style="font-weight:400; text-transform:none; letter-spacing:0;">'+escHtml(result.assignedTo)+'</span>';
+  }
+  html += '</span>';
+  if (result.suggestion) {
+    html += '&nbsp;&nbsp;<span style="color:var(--text2);">→</span>&nbsp;';
+    html += '<button onmousedown="useSuggestion(\''+escHtml(result.suggestion)+'\')" ';
+    html += 'style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--blue); background:none; border:none; cursor:pointer; padding:0; text-decoration:underline;">';
+    html += 'Use '+escHtml(result.suggestion)+'</button>';
+  }
+  statusEl.innerHTML = html;
+}
+
+function useSuggestion(id) {
+  document.getElementById("fieldBatchID").value = id;
+  hidePrefixDropdown();
+  lastCheckedID = '';
+  onBatchIDInput(id);
+}
+
+function getStatusColor(status) {
+  var s = (status || '').toLowerCase();
+  if (s === 'avail in distru/on menu' || s === 'passed but not avail in distru') return 'var(--green)';
+  if (s === 'failed') return 'var(--punch-red)';
+  if (['submitted for compliance','delayed in testing','testing cancelled'].includes(s)) return 'var(--blue)';
+  if (['need labels','labels made','retail id'].includes(s)) return 'var(--punch-red)';
+  return 'var(--amber)';
+  if (s === 'archived') return 'var(--text3)'; // grey
+}
+
+// ── BATCH ID LIVE CHECK ───────────────────────────────────────
+var batchCheckTimer = null;
+var lastCheckedID   = '';
+
+function debounceBatchCheck(value) {
+  clearTimeout(batchCheckTimer);
+  var statusEl = document.getElementById("batchIDStatus");
+
+  if (!value || value.length < 4) {
+    statusEl.innerHTML = '';
+    return;
+  }
+
+  // Show checking state after brief pause
+  batchCheckTimer = setTimeout(function() {
+    if (value === lastCheckedID) return;
+    lastCheckedID = value;
+
+    statusEl.innerHTML = '<span style="font-size:0.72rem; color:var(--text3); font-family:var(--display); text-transform:uppercase; letter-spacing:0.06em;">Checking...</span>';
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        renderBatchIDStatus(value, result);
+      })
+      .withFailureHandler(function() {
+        statusEl.innerHTML = '';
+      })
+      .serverCheckBatchID(value);
+  }, 500); // 500ms debounce
+}
+
+function renderBatchIDStatus(batchID, result) {
+  var statusEl = document.getElementById("batchIDStatus");
+
+  // Only render if the input still matches what we checked
+  var currentVal = document.getElementById("fieldBatchID").value;
+  if (currentVal !== batchID) return;
+
+  if (result.available === null) {
+    statusEl.innerHTML = '';
+    return;
+  }
+
+  if (result.available) {
+    statusEl.innerHTML =
+      '<span style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--green);">✓ Available</span>';
+    return;
+  }
+
+  // Taken — show what it's assigned to + suggestion
+  var html = '<span style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--punch-red);">✕ Taken';
+  if (result.assignedTo) {
+    html += ' — <span style="font-weight:400; text-transform:none; letter-spacing:0;">'+escHtml(result.assignedTo)+'</span>';
+  }
+  html += '</span>';
+
+  if (result.suggestion) {
+    html += '&nbsp;&nbsp;<span style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text2);">→</span>&nbsp;';
+    html += '<button onclick="useSuggestion(\''+escHtml(result.suggestion)+'\')" ';
+    html += 'style="font-size:0.72rem; font-family:var(--display); font-weight:700; text-transform:uppercase; letter-spacing:0.06em; ';
+    html += 'color:var(--blue); background:none; border:none; cursor:pointer; padding:0; text-decoration:underline;">';
+    html += 'Use '+escHtml(result.suggestion)+'</button>';
+  }
+
+  statusEl.innerHTML = html;
+}
+
+function useSuggestion(id) {
+  var input = document.getElementById("fieldBatchID");
+  input.value = id;
+  lastCheckedID = ''; // force recheck
+  debounceBatchCheck(id);
+}
+
+// ── SUBMIT ───────────────────────────────────────────────────────────────────
+function submitForm() {
+  if (!selectedType) { showToast("Select a product type first", "error"); return; }
+
+  var t = TEMPLATES[selectedType];
+  var f = {
+    strain: getVal("fStrain"), flavor: getVal("fFlavor"),
+    format: getVal("fFormat"), tier: getVal("fTier"),
+    collab: getVal("fCollab"), effect: getVal("fEffect")
+  };
+  var batchID  = document.getElementById("fieldBatchID").value.trim().toUpperCase();
+  var mfgDate  = document.getElementById("fieldMfgDate").value;
+  var qty      = document.getElementById("fieldQty").value;
+  var lab      = document.getElementById("fieldLab").value;
+
+  if (!batchID) { showToast("Batch ID is required", "error"); return; }
+  if (!mfgDate) { showToast("Mfg date is required", "error"); return; }
+
+  // Validate flavor/strain filled for required fields
+  if (t.fields.indexOf("strain") >= 0 && !f.strain) {
+    showToast("Strain / flavor name is required", "error"); return;
+  }
+  if (t.fields.indexOf("flavor_select") >= 0 && !f.flavor) {
+    showToast("Please select a flavor / SKU", "error"); return;
+  }
+
+  if (!nextUID) { showToast("No METRC tags available. Import tags first.", "error"); return; }
+
+  var itemName = buildNameFromPattern(t, f);
+
+  var btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  showProgress("Assigning METRC tag...", 20);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        hideProgress();
+        showToast(result.error, "error");
+        btn.textContent = "Create Batch";
+        btn.disabled = false;
+        return;
+      }
+      hideProgress();
+      createdUID = result.batch.metrcUID;
+      document.getElementById("successName").textContent = itemName;
+      document.getElementById("successChip").textContent =
+        result.batch.metrcUID + " · " + result.batch.batchID;
+      document.getElementById("mainCard").querySelector(".card-body").style.display = "none";
+      document.getElementById("formActions").style.display = "none";
+      document.getElementById("successWrap").classList.add("show");
+    })
+    .withFailureHandler(function(err) {
+      hideProgress();
+      showToast("Error: " + (err.message || err), "error");
+      btn.textContent = "Create Batch";
+      btn.disabled = false;
+    })
+    .serverCreateBatch({
+      item:        itemName,
+      batchID:     batchID,
+      category:    t.category,
+      mfgDate:     mfgDate,
+      uom:         t.uom,
+      quantity:    qty ? parseInt(qty) : "",
+      lab:         lab,
+      templateKey: selectedType || ""
+    });
+}
+
+function createAnother() {
+  selectedType = null; nextUID = null; createdUID = null;
+  document.getElementById("productGrid").querySelectorAll(".product-tile").forEach(function(el){
+    el.classList.remove("selected");
+  });
+  document.getElementById("step2").style.display = "none";
+  document.getElementById("namePreview").style.display = "none";
+  document.getElementById("fieldBatchID").value = "";
+  document.getElementById("fieldQty").value = "";
+  document.getElementById("mainCard").querySelector(".card-body").style.display = "block";
+  document.getElementById("formActions").style.display = "flex";
+  document.getElementById("successWrap").classList.remove("show");
+  var btn = document.getElementById("submitBtn");
+  btn.textContent = "Create Batch";
+  btn.disabled = true;
+  document.getElementById("uidVal").textContent = "Loading...";
+  document.getElementById("uidBadge").textContent = "Checking";
+  document.getElementById("uidBadge").className = "uid-badge-ok";
+  loadNextUID();
+}
+
+function getVal(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+function escHtml(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function showToast(msg, type) {
+  var c = document.getElementById("toastContainer");
+  var t = document.createElement("div");
+  t.className = "toast "+(type||"info");
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 4000);
+}
+
+// ── PROGRESS BAR ─────────────────────────────────────────────
+var progressTimer = null;
+var progressValue = 0;
+
+function showProgress(label, targetPct) {
+  document.getElementById("progressWrap").style.display = "block";
+  document.getElementById("formActions").style.display = "none";
+  setProgress(label, targetPct);
+
+  // Auto-crawl toward 90% to show activity
+  clearInterval(progressTimer);
+  progressTimer = setInterval(function() {
+    if (progressValue < 88) {
+      progressValue += 1;
+      document.getElementById("progressBar").style.width = progressValue + "%";
+      document.getElementById("progressPct").textContent = progressValue + "%";
+
+      // Update label based on progress
+      var label = "Assigning METRC tag...";
+      if (progressValue > 25) label = "Creating batch record...";
+      if (progressValue > 55) label = "Setting up Drive folder...";
+      if (progressValue > 75) label = "Finalizing...";
+      document.getElementById("progressLabel").textContent = label;
+    }
+  }, 200); // crawls ~1% every 200ms ≈ ~18 seconds to reach 88%
+}
+
+function setProgress(label, pct) {
+  progressValue = pct;
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("progressPct").textContent = pct + "%";
+  document.getElementById("progressLabel").textContent = label;
+}
+
+function hideProgress() {
+  clearInterval(progressTimer);
+  setProgress("Done!", 100);
+  setTimeout(function() {
+    document.getElementById("progressWrap").style.display = "none";
+    document.getElementById("formActions").style.display = "flex";
+  }, 300);
+}
+
+</script>
+</body>
+</html>

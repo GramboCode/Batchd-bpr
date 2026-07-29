@@ -4,13 +4,48 @@
 // to ANY component type via the dropdown at the top. Add a type row in the DB
 // and it shows up here — prefix, unit, and produced-vs-received all come from
 // the registry. Posts to the generic POST /components.
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../App";
 import { useAuth } from "../contexts/AuthContext";
 import AppHeader from "./AppHeader";
 import "./Dashboard.css";
 import "./NewComponent.css";
+
+// Custom dropdown — a native <select>'s option list ignores CSS font-size in
+// most browsers, so we render our own large, readable list we fully control.
+function TypeSelect({ options, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.key === value);
+
+  useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  return (
+    <div className="nc-select" ref={ref}>
+      <button type="button" className="nc-select-btn" onClick={() => setOpen(o => !o)}
+              aria-haspopup="listbox" aria-expanded={open}>
+        <span>{selected ? selected.display_name : "Select a component type…"}</span>
+        <span className="nc-select-caret">▾</span>
+      </button>
+      {open && (
+        <ul className="nc-select-list" role="listbox">
+          {options.map(o => (
+            <li key={o.key} role="option" aria-selected={o.key === value}
+                className={`nc-select-opt ${o.key === value ? "sel" : ""}`}
+                onClick={() => { onChange(o.key); setOpen(false); }}>
+              {o.display_name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 const MAX_INPUTS = 7;
 const blankInput = () => ({ uid: "", strain_name: "", weight: "" });
@@ -179,24 +214,22 @@ export default function NewComponent() {
         </header>
 
         <form className="nc-form" onSubmit={submit}>
-          {/* Component type */}
-          <label className="nc-field">
+          {/* Component type — custom dropdown (native option lists can't be
+              enlarged). display_name already says "(3rd Party)"; archived hidden. */}
+          <div className="nc-field">
             <span className="nc-label">Component Type</span>
-            <select className="nc-input nc-type-select" value={typeKey}
-                    onChange={e => setTypeKey(e.target.value)}>
-              {/* display_name already says "(3rd Party)" where relevant — don't
-                  append it again. Archived types are hidden from creation. */}
-              {types.filter(t => !t.archived).map(t => (
-                <option key={t.key} value={t.key}>{t.display_name}</option>
-              ))}
-            </select>
+            <TypeSelect
+              options={types.filter(t => !t.archived)}
+              value={typeKey}
+              onChange={setTypeKey}
+            />
             {selected && (
               <span className="nc-hint">
                 Lot codes: <b>{prefix}-…</b> · measured in <b>{unit}</b> ·{" "}
                 {produced ? "produced in-house" : "received from supplier"}
               </span>
             )}
-          </label>
+          </div>
 
           {/* ── Source tags ── */}
           <div className="nc-panel">

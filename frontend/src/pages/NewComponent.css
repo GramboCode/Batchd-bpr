@@ -10,11 +10,11 @@
   gap: 16px;
 }
 
-.nc-field { display: flex; flex-direction: column; gap: 6px; }
+.nc-field { display: flex; flex-direction: column; gap: 7px; }
 .nc-grow  { flex: 1 1 0; min-width: 0; }
 
 .nc-label {
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -31,8 +31,8 @@
 .nc-input {
   border: 1.5px solid #D0D5E3;
   border-radius: 9px;
-  padding: 10px 12px;
-  font-size: 0.95rem;
+  padding: 12px 13px;
+  font-size: 1.05rem;
   font-family: inherit;
   color: #1A1D2E;
   background: #fff;
@@ -43,7 +43,7 @@
 .nc-textarea { resize: vertical; }
 .nc-narrow { max-width: 120px; }
 
-.nc-hint { font-size: 0.8rem; color: #8890A8; }
+.nc-hint { font-size: 0.9rem; color: #8890A8; }
 .nc-hint b { color: #4A5068; }
 
 .nc-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
@@ -72,7 +72,7 @@
   background: #FAFBFE;
 }
 .nc-panel-title {
-  font-size: 0.74rem;
+  font-size: 0.9rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -162,12 +162,34 @@
 
 .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
 
-/* Component-type dropdown — larger, easier-to-read options (the native list
-   inherits the select's font-size in Chrome/Firefox). */
-.nc-type-select { font-size: 1.05rem; font-weight: 600; padding: 12px; height: auto; }
-.nc-type-select option { font-size: 1.05rem; padding: 8px; }
+/* Component-type custom dropdown — big, readable options we fully control
+   (native <select> popups ignore CSS font-size in most browsers). */
+.nc-select { position: relative; }
+.nc-select-btn {
+  width: 100%;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  border: 1.5px solid #D0D5E3; border-radius: 10px;
+  padding: 15px 16px;
+  font-size: 1.15rem; font-weight: 600; color: #1A1D2E;
+  background: #fff; cursor: pointer; font-family: inherit; text-align: left;
+}
+.nc-select-btn:hover { border-color: #8890A8; }
+.nc-select-caret { color: #8890A8; font-size: 0.85rem; flex-shrink: 0; }
+.nc-select-list {
+  position: absolute; z-index: 40; top: calc(100% + 5px); left: 0; right: 0;
+  margin: 0; padding: 6px; list-style: none;
+  max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: #fff; border: 1.5px solid #D0D5E3; border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(20,22,34,0.18);
+}
+.nc-select-opt {
+  padding: 13px 15px; font-size: 1.1rem; font-weight: 600; color: #1A1D2E;
+  border-radius: 9px; cursor: pointer;
+}
+.nc-select-opt:hover { background: #F4F6FA; }
+.nc-select-opt.sel { background: #E8192C; color: #fff; }
 
-.nc-card-intro { margin: 0 0 2px; font-size: 0.86rem; line-height: 1.45; color: #6A7089; }
+.nc-card-intro { margin: 0 0 2px; font-size: 0.95rem; line-height: 1.5; color: #6A7089; }
 .nc-card-intro b { color: #1A1D2E; }
 
 /* Source-tag rows — a grid so column labels and inputs line up */
@@ -178,7 +200,7 @@
   align-items: center;
 }
 .nc-src-head span {
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
