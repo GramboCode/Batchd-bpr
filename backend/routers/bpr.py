@@ -24,7 +24,7 @@ from pydantic import BaseModel
 import httpx
 
 from db import get_db
-from utils import now_utc, fmt_ts, _post_wash_gas
+from utils import now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists
 from bpr_phases import BPR_PHASES, detect_product_family
 # Component ledger helpers — reused so a BPR consuming a component lot decrements
 # inventory through the exact same ledger path the components router uses.
@@ -136,7 +136,7 @@ def find_existing_bpr(cur, uid: str, metrc_uid: Optional[str] = None):
 # NEW in v2.0: writes the BPR id back onto the component lot (wash_bpr_id fix)
 # ─────────────────────────────────────────────────────────────────────────
 @router.post("/bpr/create")
-def create_bpr(req: BPRCreateRequest):
+async def create_bpr(req: BPRCreateRequest):
     family = detect_product_family(req.product_name, req.category or "", req.bpr_type or "")
     if not family:
         raise HTTPException(400, f"Could not detect product family for: {req.product_name}")
@@ -152,6 +152,37 @@ def create_bpr(req: BPRCreateRequest):
                     "phases": BPR_PHASES[existing["product_family"]],
                     "message": "BPR already exists for this batch"
                 }
+
+            # ── PRECONDITION: a physical batch record must exist ─────────
+            # Checked here, at create, so an operator finds out BEFORE doing
+            # the work rather than after. Without this, a UID that was
+            # hand-assigned in the tracker but never run through "Create Batch
+            # Records" would produce a fully-filled BPR whose every sheet
+            # write-back silently no-ops (getBPRFileForUID returns null and
+            # each writer bails). See bpr_sheet_exists() for the fail-open
+            # rules — an unreachable GAS never blocks production.
+            #
+            # rosin_wash is exempt on purpose, and this is NOT an oversight:
+            # createWashBatchRecord() files the wash sheet into a folder named
+            # for the METRC tag, while a wash BPR's `uid` is the HASH LOT ID.
+            # Probing by uid would therefore find nothing and block every wash
+            # BPR. Wash has its own existence signal already — the lot's
+            # sheet_url, which _get_wash_sheet_url() checks before each write.
+            if family != "rosin_wash":
+                allowed, reason = await bpr_sheet_exists(req.uid)
+                if not allowed:
+                    raise HTTPException(409, {
+                        "message": (
+                            "No batch record exists for this UID yet, so nothing "
+                            "entered here could be saved to it. Create the batch "
+                            "record first (Punch Tools → Create Batch Records for "
+                            "Selected), then reopen this BPR."
+                        ),
+                        "uid": req.uid,
+                        "batch_id": req.batch_id,
+                        "reason": reason,
+                        "code": "no_batch_record_sheet",
+                    })
 
             cur.execute("""
                 INSERT INTO bpr_records
@@ -594,6 +625,36 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
 
             family = rec["product_family"]
             definition = BPR_PHASES[family]
+
+            # ── PRECONDITION, SECOND GATE ────────────────────────────────
+            # The create-time guard can't help BPRs that were already in the
+            # DB before it existed — find_existing_bpr() short-circuits create
+            # for those, so they'd sail straight through to release exactly
+            # like before. This is the net that catches that backlog, and the
+            # last point where a batch can still be stopped from being marked
+            # released with no physical record behind it.
+            #
+            # Blocking here is recoverable, which is why it's safe to do: all
+            # the operator's work is already committed to the DB. They create
+            # the batch record sheet and press release again — nothing is lost.
+            # Same rosin_wash exemption and same fail-open-on-error rules as
+            # create; see bpr_sheet_exists().
+            if family != "rosin_wash":
+                allowed, reason = await bpr_sheet_exists(uid)
+                if not allowed:
+                    raise HTTPException(409, {
+                        "message": (
+                            "This BPR can't be released: no batch record exists "
+                            "for this UID, so the release would not be written to "
+                            "any record. Create the batch record (Punch Tools → "
+                            "Create Batch Records for Selected), then release again. "
+                            "Nothing you've entered will be lost."
+                        ),
+                        "uid": uid,
+                        "batch_id": rec.get("batch_id"),
+                        "reason": reason,
+                        "code": "no_batch_record_sheet",
+                    })
 
             cur.execute("SELECT phase_id FROM bpr_phase_signoffs WHERE bpr_id = %s", (rec["id"],))
             signed_phases = {r["phase_id"] for r in cur.fetchall()}

@@ -63,6 +63,75 @@ async def _post_wash_gas(payload: dict, label: str):
         print(f"{label} failed (non-fatal): {e}")
 
 
+async def bpr_sheet_exists(uid: str) -> tuple[bool, str]:
+    """
+    Ask GAS whether a real batch record sheet exists in Drive for `uid`.
+
+    Returns (allowed, reason).
+
+    THE BUG THIS EXISTS FOR
+    -----------------------
+    A METRC UID can be sitting in UID_TRACKER with a batch ID next to it and
+    still have NO batch record sheet — that happens whenever someone assigns a
+    UID by hand and doesn't run "Create Batch Records for Selected". Nothing in
+    the app noticed. An operator could open that UID, sign off every phase, and
+    release it, while every sheet write-back quietly returned "No BPR file
+    found for UID" into a log nobody reads. The DB record looked complete; the
+    physical record for that batch never existed.
+
+    FAIL-OPEN ON UNCERTAINTY — AND WHY
+    ----------------------------------
+    We block ONLY on a definitive "no sheet" answer (checked=True, exists=False).
+    A GAS timeout, a missing GAS_WEBHOOK_URL, a Drive outage, a non-JSON
+    response — all of those return allowed=True.
+
+    That asymmetry is the whole design. A false block halts a production line
+    over an outage in a system that is not the source of truth; a false allow
+    reproduces today's behavior, which is what we already live with. The DB
+    stays the record of what happened either way, so an allow-on-error is
+    recoverable and a block-on-error is not. Every fail-open path logs, so the
+    "we couldn't check" cases stay visible rather than looking like passes.
+
+    PRODUCTION NOTE: this adds a synchronous GAS round trip to BPR create and
+    release. GAS cold starts can take several seconds, hence the 15s timeout —
+    long enough to be a real check, short enough not to hang the UI. If that
+    latency becomes a problem, cache per-UID results for the life of a shift;
+    do NOT solve it by dropping the check at release, which is the one that
+    matters most.
+    """
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
+        print(f"bpr_sheet_exists({uid}): no GAS_WEBHOOK_URL — allowing unchecked")
+        return True, "guard skipped: GAS_WEBHOOK_URL not configured"
+
+    payload = {
+        "action": "bprSheetExists",
+        "uid": uid,
+        "secret": os.environ.get("GAS_SHARED_SECRET", ""),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.post(webhook_url, json=payload)
+            data = resp.json()
+    except Exception as e:
+        print(f"bpr_sheet_exists({uid}): probe failed — allowing unchecked: {e}")
+        return True, f"guard skipped: {e}"
+
+    # GAS couldn't determine an answer (Drive error, archive folder unreachable).
+    # Not the same as "no sheet" — don't treat it as one.
+    if not data.get("checked"):
+        reason = data.get("reason") or data.get("error") or "unknown"
+        print(f"bpr_sheet_exists({uid}): indeterminate — allowing unchecked: {reason}")
+        return True, f"guard indeterminate: {reason}"
+
+    if data.get("exists"):
+        return True, "batch record sheet found"
+
+    # Definitive: GAS looked, and there is no batch record sheet for this UID.
+    return False, data.get("reason") or "no batch record sheet found for this UID"
+
+
 async def call_gas(payload: dict, label: str) -> dict:
     """
     Like _post_wash_gas, but RETURNS the GAS response JSON (secret stamped the
