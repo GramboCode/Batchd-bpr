@@ -17,6 +17,7 @@ into components.py's functions, so there's no circular import here.
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query
@@ -694,50 +695,108 @@ async def supervisor_release(uid: str, req: SupervisorReleaseRequest):
         conn.close()   # ← finally now ONLY closes the connection. Nothing else.
 
     # ── Everything below only runs after a successful commit ──────────
-    pdf_url = await generate_and_upload_pdf(completed, definition, signoffs, steps)
+    #
+    # THE RELEASE IS ALREADY DONE AT THIS POINT. Every step below is a
+    # downstream side effect — PDF, sheet write-back, tracker ping — and none
+    # of them can un-release the batch, because the transaction that marked it
+    # `completed` has already committed and its connection is closed.
+    #
+    # So an exception down here must NOT become a 500. That exact bug bit us:
+    # push_wash_release_summary() raised NameError, the operator saw "500
+    # Internal Server Error" and reasonably concluded the release had failed —
+    # but the DB said completed, so every retry hit "BPR is already completed",
+    # and the batch was stuck with no way forward from the UI.
+    #
+    # Each step is therefore isolated: a failure is recorded as a warning and
+    # reported honestly in the response, and the rest still run. Reporting
+    # matters as much as the isolation — silently swallowing these is how the
+    # PDF upload managed to fail on every single release without anyone
+    # noticing. The operator gets "released, but the sheet write-back failed",
+    # which is the truth and is actionable.
+    warnings: List[str] = []
+
+    async def _side_effect(label: str, coro):
+        """Run one post-release side effect; never let it fail the request."""
+        try:
+            return await coro
+        except Exception as exc:
+            print(f"post-release [{label}] failed for {uid}: {exc}")
+            import traceback; traceback.print_exc()
+            warnings.append(f"{label} failed: {exc}")
+            return None
+
+    pdf_url = await _side_effect(
+        "PDF generation/upload",
+        generate_and_upload_pdf(completed, definition, signoffs, steps),
+    )
 
     if pdf_url:
-        conn2 = get_db()
         try:
-            with conn2.cursor() as cur2:
-                cur2.execute("UPDATE bpr_records SET pdf_drive_url = %s WHERE uid = %s",
-                             (pdf_url, uid))
-            conn2.commit()
-            completed["pdf_drive_url"] = pdf_url
-        finally:
-            conn2.close()
+            conn2 = get_db()
+            try:
+                with conn2.cursor() as cur2:
+                    cur2.execute("UPDATE bpr_records SET pdf_drive_url = %s WHERE uid = %s",
+                                 (pdf_url, uid))
+                conn2.commit()
+                completed["pdf_drive_url"] = pdf_url
+            finally:
+                conn2.close()
+        except Exception as exc:
+            print(f"post-release [PDF url save] failed for {uid}: {exc}")
+            warnings.append(f"PDF url save failed: {exc}")
 
-    await ping_gas_webhook(uid, "completed", pdf_url)
+    await _side_effect("tracker status ping", ping_gas_webhook(uid, "completed", pdf_url))
 
     if family == "rosin_wash":
-        conn3 = get_db()
+        # Marking the lot available is the one step here with real downstream
+        # consequence (it's what lets a press BPR draw this hash down), so it
+        # gets its own warning rather than being lumped in with the sheet write.
         try:
-            with conn3.cursor() as cur3:
-                cur3.execute("""
-                    UPDATE bpr_component_lots SET
-                        status = 'available',
-                        storage_location = COALESCE(NULLIF(storage_location, ''), (
-                            SELECT storage_location FROM hash_lot_sift_sessions
-                            WHERE hash_lot_id = %s AND storage_location IS NOT NULL
-                            ORDER BY completed_at DESC NULLS LAST LIMIT 1
-                        )),
-                        updated_at = NOW()
-                    WHERE lot_code = %s
-                """, (uid, uid))
-            conn3.commit()
-        finally:
-            conn3.close()
-        await push_wash_release_summary(uid, req.supervisor_name)
+            conn3 = get_db()
+            try:
+                with conn3.cursor() as cur3:
+                    cur3.execute("""
+                        UPDATE bpr_component_lots SET
+                            status = 'available',
+                            storage_location = COALESCE(NULLIF(storage_location, ''), (
+                                SELECT storage_location FROM hash_lot_sift_sessions
+                                WHERE hash_lot_id = %s AND storage_location IS NOT NULL
+                                ORDER BY completed_at DESC NULLS LAST LIMIT 1
+                            )),
+                            updated_at = NOW()
+                        WHERE lot_code = %s
+                    """, (uid, uid))
+                conn3.commit()
+            finally:
+                conn3.close()
+        except Exception as exc:
+            print(f"post-release [lot → available] failed for {uid}: {exc}")
+            import traceback; traceback.print_exc()
+            warnings.append(f"marking lot available failed: {exc}")
+
+        await _side_effect(
+            "wash sheet release summary",
+            push_wash_release_summary(uid, req.supervisor_name),
+        )
     else:
         # Cell-mapped standardized BPRs: write Section 3 yield (Expected/Actual)
         # at release. The wash sheet handles its own Section 3 above via
         # push_wash_release_summary; every other family lands here.
-        await push_release_summary_bpr(completed, req.supervisor_name, req.total_yield)
+        await _side_effect(
+            "sheet release summary",
+            push_release_summary_bpr(completed, req.supervisor_name, req.total_yield),
+        )
+
+    message = f"BPR released by {req.supervisor_name}"
+    if warnings:
+        message += (" — released successfully, but some follow-up steps failed "
+                    "(see warnings); the release itself is recorded.")
 
     return {
         "success": True,
         "bpr": completed,
-        "message": f"BPR released by {req.supervisor_name}"
+        "warnings": warnings,
+        "message": message
     }
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -835,7 +894,6 @@ async def submit_bpr_equipment(uid: str, req: EquipmentCheckRequest):
     rec, template_key = _bpr_template_key_or_404(uid)
     max_equip = 12 if rec.get("product_family") in NANO_TEMPLATE_FAMILIES else 9
 
-    from datetime import datetime, timezone   # local: datetime isn't imported module-wide
     now_time = (fmt_ts(datetime.now(timezone.utc)) or "").split(" ", 1)[-1]  # time portion
 
     fields = {}
@@ -1947,7 +2005,6 @@ async def push_release_summary_bpr(rec: dict, supervisor_name: str, total_yield)
         print(f"release summary: no template key for {product_family} — skipping S3 write")
         return
 
-    from datetime import datetime, timezone   # local: datetime isn't imported module-wide
     fields = {
         "YIELD1_ACTUAL":   total_yield or "",
         "YIELD1_INITIALS": supervisor_name,
