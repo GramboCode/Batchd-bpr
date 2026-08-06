@@ -239,6 +239,39 @@
 }
 .lot-delete-btn:hover { background: #C01020; border-color: #C01020; color: #fff; }
 
+/* Open/Continue BPR — the primary action on a lot, so it's filled where
+   Delete Lot is outlined. Same metrics as .lot-delete-btn so the two sit on a
+   shared baseline when an admin sees both. */
+.lot-bpr-btn {
+  flex-shrink: 0;
+  display: inline-block;
+  background: #C01020;
+  color: #fff;
+  border: 1.5px solid #C01020;
+  border-radius: 9px;
+  padding: 8px 15px;
+  font-weight: 800;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.lot-bpr-btn:hover {
+  background: #9E0D1A;
+  border-color: #9E0D1A;
+  box-shadow: 0 2px 10px rgba(192, 16, 32, 0.25);
+}
+
+/* The label grows ("Continue BPR · 3/6 phases"), so on narrow screens let it
+   drop to its own line rather than squeezing the on-hand total off-screen. */
+@media (max-width: 560px) {
+  .lot-bpr-btn { white-space: normal; font-size: 0.74rem; padding: 7px 12px; }
+}
+
 .lot-modal-overlay {
   position: fixed; inset: 0;
   background: rgba(20, 22, 34, 0.55);

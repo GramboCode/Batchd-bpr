@@ -17,6 +17,23 @@ const TXN_LABELS = {
   metrc_package: { label: "METRC Package", sign: "−" },
 };
 
+// ── Deep-link params per component type ────────────────────────────────────
+// The /bpr route is param-driven (see getParams in App.jsx): it needs at
+// minimum a uid and a NON-EMPTY product name, or it renders the "No product
+// name provided" error instead of the form.
+//
+// `product` is not cosmetic when the BPR doesn't exist yet — the backend runs
+// detect_product_family() on it, which keys on substrings. "Live Rosin" +
+// bprType "wash" is what routes to the rosin_wash family; "Nano Isolate" is
+// what routes to nano_isolate. Change these strings only against
+// detect_product_family in bpr_phases.py, or you'll create BPRs on the wrong
+// template. Once a BPR exists the backend loads it by uid and these only need
+// to be non-empty, but they still have to be right for the FIRST open.
+const BPR_LINK_PARAMS = {
+  ice_water_hash: { product: "Live Rosin", category: "rosin_wash", bprType: "wash" },
+  nano_isolate:   { product: "Nano Isolate", category: "", bprType: "" },
+};
+
 export default function LotDetail() {
   const { lotCode } = useParams();
   const navigate = useNavigate();
@@ -28,6 +45,7 @@ export default function LotDetail() {
   const [showDelete, setShowDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [delErr, setDelErr] = useState("");
+  const [bprStatus, setBprStatus] = useState(null);
 
   async function confirmDelete() {
     setDeleteBusy(true);
@@ -63,6 +81,23 @@ export default function LotDetail() {
         setError(e.message);
       }
     })();
+  }, [lotCode]);
+
+  // Does this lot have a digital BPR, and how far along is it? Drives the
+  // "Open BPR" button's label and destination. Best-effort: if the probe
+  // fails we still render the button (the BPR flow shows its own error) —
+  // better than hiding the only way in.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/bpr/${encodeURIComponent(lotCode)}/status`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) setBprStatus(json);
+      } catch { /* non-fatal — button falls back to "Open BPR" */ }
+    })();
+    return () => { cancelled = true; };
   }, [lotCode]);
 
   // Resolve the batch folder. Preferred source: the lot's OWN folder created at
@@ -111,6 +146,44 @@ export default function LotDetail() {
     }) : "—";
   }
 
+  // ── "Open BPR" link ──────────────────────────────────────────────────────
+  // Until now the digital BPR for a component lot was reachable ONLY by
+  // scanning the printed sheet's QR or hand-typing the URL — there was no way
+  // in from the app. This is that way in.
+  const linkParams = BPR_LINK_PARAMS[lot.component_type];
+  // Show the button when we know how to construct a valid link, OR when a BPR
+  // already exists (then `product` only has to be non-empty, so the component
+  // type itself is a safe stand-in for an unmapped type).
+  const canOpenBPR = !!linkParams || bprStatus?.exists;
+  const bprHref = canOpenBPR
+    ? "/bpr?" + new URLSearchParams({
+        uid:      lot.lot_code,
+        product:  linkParams?.product || lot.component_type || "Component",
+        batchId:  lot.lot_code,
+        category: linkParams?.category || "",
+        bprType:  linkParams?.bprType || "",
+        // getParams() in App.jsx already reads returnUrl, but nothing consumes
+        // it yet — sent so a future "← Back to lot" in the BPR flow has it.
+        // No encodeURIComponent here: URLSearchParams encodes values itself,
+        // and pre-encoding would double-escape the slashes.
+        returnUrl: `/components/${lot.lot_code}`,
+      }).toString()
+    : null;
+
+  // Label carries progress so the operator knows what they're walking into.
+  let bprLabel = "Start BPR";
+  if (bprStatus?.exists) {
+    bprLabel = bprStatus.status === "completed"
+      ? "View BPR (released)"
+      : `Continue BPR${
+          bprStatus.total_phases
+            ? ` · ${bprStatus.phases_signed}/${bprStatus.total_phases} phases`
+            : ""
+        }`;
+  } else if (bprStatus === null) {
+    bprLabel = "Open BPR";   // status probe hasn't answered yet
+  }
+
   return (
     <>
       <AppHeader />
@@ -127,6 +200,14 @@ export default function LotDetail() {
           </div>
         </div>
         <div className="dash-header-right">
+          {bprHref && (
+            // A real <a>, not navigate(): the BPR flow reads its config from
+            // window.location.search at mount, so it needs a genuine navigation.
+            <a className="lot-bpr-btn" href={bprHref}
+               title="Open the digital batch production record for this lot">
+              {bprLabel}
+            </a>
+          )}
           {isAdmin && (
             <button className="lot-delete-btn" onClick={() => { setDelErr(""); setShowDelete(true); }}
                     title="Admin: permanently remove this component lot">
