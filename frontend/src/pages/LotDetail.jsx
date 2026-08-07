@@ -171,15 +171,16 @@ export default function LotDetail() {
     : null;
 
   // Label carries progress so the operator knows what they're walking into.
+  // Same three states as the finished-goods batch page — kept deliberately
+  // identical so an operator moving between the two pages reads one vocabulary.
+  const bprDone = bprStatus?.exists && bprStatus.status === "completed";
   let bprLabel = "Start BPR";
-  if (bprStatus?.exists) {
-    bprLabel = bprStatus.status === "completed"
-      ? "View BPR (released)"
-      : `Continue BPR${
-          bprStatus.total_phases
-            ? ` · ${bprStatus.phases_signed}/${bprStatus.total_phases} phases`
-            : ""
-        }`;
+  if (bprDone) {
+    bprLabel = "✓ BPR Released";
+  } else if (bprStatus?.exists) {
+    bprLabel = bprStatus.total_phases
+      ? `Continue BPR · ${bprStatus.phases_signed}/${bprStatus.total_phases} phases`
+      : "Continue BPR";
   } else if (bprStatus === null) {
     bprLabel = "Open BPR";   // status probe hasn't answered yet
   }
@@ -200,14 +201,21 @@ export default function LotDetail() {
           </div>
         </div>
         <div className="dash-header-right">
-          {bprHref && (
+          {bprHref && (bprDone ? (
+            // Signed off — a marker, not a link. Same rule as the batch page:
+            // once released, the record is closed to further entry.
+            <span className="lot-bpr-btn is-done"
+                  title={`Released${bprStatus.supervisor_name ? ` by ${bprStatus.supervisor_name}` : ""}${bprStatus.completed_at ? ` on ${bprStatus.completed_at}` : ""} — this record is closed`}>
+              {bprLabel}
+            </span>
+          ) : (
             // A real <a>, not navigate(): the BPR flow reads its config from
             // window.location.search at mount, so it needs a genuine navigation.
             <a className="lot-bpr-btn" href={bprHref}
                title="Open the digital batch production record for this lot">
               {bprLabel}
             </a>
-          )}
+          ))}
           {isAdmin && (
             <button className="lot-delete-btn" onClick={() => { setDelErr(""); setShowDelete(true); }}
                     title="Admin: permanently remove this component lot">

@@ -25,7 +25,7 @@ from pydantic import BaseModel
 import httpx
 
 from db import get_db
-from utils import now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists
+from utils import now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists, describe_exc
 from bpr_phases import BPR_PHASES, detect_product_family
 # Component ledger helpers — reused so a BPR consuming a component lot decrements
 # inventory through the exact same ledger path the components router uses.
@@ -327,7 +327,7 @@ async def _push_cann_row_to_gas(uid: str, family: str, section_row: int,
             })
             print(f"GAS CANN-row write-back: {resp.status_code} — {resp.text[:160]}")
     except Exception as e:
-        print(f"GAS CANN-row write-back failed (non-fatal): {e}")
+        print(f"GAS CANN-row write-back failed (non-fatal) [uid={uid}]: {describe_exc(e)}")
 
 
 @router.post("/bpr/{uid}/consume-component")
@@ -1280,15 +1280,18 @@ async def ping_gas_webhook(uid: str, status: str, pdf_url: Optional[str]):
         return
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            await client.post(webhook_url, json={
+            resp = await client.post(webhook_url, json={
                 "action": "updateBPRStatus",
                 "uid": uid,
                 "bprStatus": status,
                 "pdfUrl": pdf_url,
                 "secret": os.environ.get("GAS_SHARED_SECRET", ""),
             })
+            # The response was being discarded entirely, so an "Unauthorized"
+            # from the doPost secret gate looked identical to a success.
+            print(f"GAS webhook ping ({uid}): {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
-        print(f"GAS webhook ping failed (non-fatal): {e}")
+        print(f"GAS webhook ping failed (non-fatal) [uid={uid}]: {describe_exc(e)}")
 
 # ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
 # ── Product family → GAS templateKey (BPR_CELL_MAPS key in BPR.gs) ──
@@ -1981,7 +1984,7 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
             })
             print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
-        print(f"GAS BPR write-back failed (non-fatal): {e}")
+        print(f"GAS BPR write-back failed (non-fatal) [uid={uid}]: {describe_exc(e)}")
 
 
 async def push_release_summary_bpr(rec: dict, supervisor_name: str, total_yield):

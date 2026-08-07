@@ -9,6 +9,7 @@ having the other import across sideways, which is a smell).
 """
 
 import os
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -35,6 +36,29 @@ def fmt_ts(ts):
     return ts.astimezone(LOCAL_TZ).strftime("%-m/%-d/%Y %-I:%M %p")
 
 
+def describe_exc(e: BaseException) -> str:
+    """
+    Render an exception in a form that's actually diagnosable in Railway logs.
+
+    WHY THIS EXISTS: every GAS call site logged `f"...: {e}"`, and several of
+    the exceptions that actually occur here — httpx.ReadTimeout,
+    httpx.ConnectTimeout, httpx.ConnectError — carry an EMPTY message. So the
+    logs read:
+
+        wash release summary failed (non-fatal):
+
+    ...with nothing after the colon. Every GAS write-back in production was
+    failing and the log said nothing about why. The exception TYPE is the
+    single most useful bit (timeout vs. DNS vs. TLS vs. protocol), and it was
+    the one part being thrown away.
+
+    Always includes the class name; appends the message only when non-empty.
+    """
+    msg = str(e).strip()
+    name = type(e).__name__
+    return f"{name}: {msg}" if msg else f"{name} (no message)"
+
+
 async def _post_wash_gas(payload: dict, label: str):
     """
     Shared fire-and-forget POST to the GAS doPost webhook.
@@ -55,12 +79,28 @@ async def _post_wash_gas(payload: dict, label: str):
         print(f"{label}: no GAS_WEBHOOK_URL — skipping")
         return
     payload["secret"] = os.environ.get("GAS_SHARED_SECRET", "")   # auth for doPost guard
+    started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        # 45s, raised from 20s. An Apps Script web app that opens a Spreadsheet
+        # or walks Drive folders routinely takes 5-15s, and a cold script
+        # container adds more on top; measured round trips to this endpoint run
+        # ~6s when everything is healthy. 20s left very little headroom, and a
+        # timeout here is indistinguishable from a real failure to the operator.
+        # Safe to be generous: this call is fire-and-forget, so nobody waits on it.
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json=payload)
-            print(f"{label}: {resp.status_code} — {resp.text[:200]}")
+            print(f"{label}: {resp.status_code} in {time.monotonic() - started:.1f}s "
+                  f"— {resp.text[:200]}")
     except Exception as e:
-        print(f"{label} failed (non-fatal): {e}")
+        # Three things this line needs and previously had none of:
+        #   action    — a burst of these is otherwise unattributable
+        #   exc type  — see describe_exc; str(e) is EMPTY for httpx timeouts
+        #   elapsed   — the tell that separates the two likely causes. Failing
+        #               at ~the timeout value means GAS is too slow; failing in
+        #               well under a second means we never connected (DNS,
+        #               egress block, TLS) and no timeout bump will help.
+        print(f"{label} failed (non-fatal) after {time.monotonic() - started:.1f}s "
+              f"[action={payload.get('action')}]: {describe_exc(e)}")
 
 
 async def bpr_sheet_exists(uid: str) -> tuple[bool, str]:
@@ -110,13 +150,19 @@ async def bpr_sheet_exists(uid: str) -> tuple[bool, str]:
         "secret": os.environ.get("GAS_SHARED_SECRET", ""),
     }
 
+    started = time.monotonic()
     try:
+        # Deliberately NOT raised to 45s like _post_wash_gas: an operator is
+        # waiting on this one (it gates create + release), so a slow GAS should
+        # fail open quickly rather than freeze the UI. 15s is the tradeoff.
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json=payload)
             data = resp.json()
     except Exception as e:
-        print(f"bpr_sheet_exists({uid}): probe failed — allowing unchecked: {e}")
-        return True, f"guard skipped: {e}"
+        detail = describe_exc(e)
+        print(f"bpr_sheet_exists({uid}): probe failed after "
+              f"{time.monotonic() - started:.1f}s — allowing unchecked: {detail}")
+        return True, f"guard skipped: {detail}"
 
     # GAS couldn't determine an answer (Drive error, archive folder unreachable).
     # Not the same as "no sheet" — don't treat it as one.
@@ -152,4 +198,6 @@ async def call_gas(payload: dict, label: str) -> dict:
                 return {"success": False,
                         "error": f"GAS non-JSON ({resp.status_code}): {resp.text[:200]}"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        detail = describe_exc(e)
+        print(f"{label} failed (non-fatal) [action={payload.get('action')}]: {detail}")
+        return {"success": False, "error": detail}

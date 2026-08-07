@@ -36,10 +36,18 @@ function isWashBatch(b) {
 // the METRC tag — sending the tag as `uid` there would open an
 // ambiguous or wrong BPR record. Finished-goods batches are 1:1, so
 // those keep uid = METRC UID as before.
+// The BPR's primary key for this batch. Extracted so the "is there a BPR and
+// how far along is it?" probe and the link itself can never disagree about
+// WHICH record they mean — if they drifted, the button would report one
+// record's progress while opening a different one.
+function bprUidFor(b) {
+  return isWashBatch(b) ? (b.batchID || "") : (b.metrcUID || "");
+}
+
 function buildBprUrl(b) {
   const wash = isWashBatch(b);
   const params = new URLSearchParams({
-    uid: wash ? (b.batchID || "") : (b.metrcUID || ""),
+    uid: bprUidFor(b),
     // Fallback-lookup field only, never the primary identifier for a
     // wash batch. Note: "metricUid" (not "metrcUid") is the actual key
     // name batch.html sends — matching it exactly here since that's
@@ -136,6 +144,11 @@ export default function BatchDetail() {
   const [pushForm, setPushForm] = useState({ date: "", sampleSize: "", rndType: RND_TYPES[0] });
   const [pushBusy, setPushBusy] = useState(false);
 
+  // ── BPR progress ──
+  // null = not looked up yet. Drives whether the Documents card offers
+  // "Start BPR", "Continue BPR · 2/6 phases", or a disabled "BPR Released".
+  const [bprStatus, setBprStatus] = useState(null);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -153,6 +166,29 @@ export default function BatchDetail() {
       }
     })();
   }, [uid]);
+
+  // How far along is this batch's BPR? Keyed off the RESOLVED bpr uid (lot code
+  // for wash, METRC tag otherwise) — the same value the link uses.
+  //
+  // Runs after the batch loads because that's when we can compute the uid.
+  // Best-effort: on any failure bprStatus stays null and the button falls back
+  // to a plain enabled "Open BPR", so a flaky probe can never lock an operator
+  // out of a record they still need to fill in.
+  useEffect(() => {
+    if (!batch) return;
+    const bprUid = bprUidFor(batch);
+    if (!bprUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/bpr/${encodeURIComponent(bprUid)}/status`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) setBprStatus(json);
+      } catch { /* non-fatal — button stays generic */ }
+    })();
+    return () => { cancelled = true; };
+  }, [batch]);
 
   // Single write path for every edit. Sends only the changed field(s); the
   // backend returns the fresh batch, which we drop straight back into state
@@ -276,6 +312,22 @@ export default function BatchDetail() {
 
   const b = batch;
   const bprUrl = buildBprUrl(b);
+
+  // ── BPR button state ─────────────────────────────────────────────────────
+  // Three states, because "Open BPR" alone told the operator nothing about
+  // whether there was anything to open, anything left to do, or whether the
+  // record was already signed off and shouldn't be touched.
+  const bprDone = bprStatus?.exists && bprStatus.status === "completed";
+  let bprLabel = "📋 Open BPR";
+  if (bprDone) {
+    bprLabel = "✓ BPR Released";
+  } else if (bprStatus?.exists) {
+    bprLabel = bprStatus.total_phases
+      ? `📋 Continue BPR · ${bprStatus.phases_signed}/${bprStatus.total_phases} phases`
+      : "📋 Continue BPR";
+  } else if (bprStatus) {           // probe answered: no record yet
+    bprLabel = "📋 Start BPR";
+  }
 
   // One editable numeric/text field (mfg date, final qty, target qty). Each
   // renders a label + input + Save that's disabled until the value changes.
@@ -495,7 +547,25 @@ export default function BatchDetail() {
             <div className="bd-card">
               <div className="bd-card-head"><h3>Documents</h3></div>
               <div className="bd-card-body bd-actions">
-                <a className="pd-action-btn primary" href={bprUrl}>📋 Open BPR</a>
+                {/* Once the BPR is signed off, this becomes a non-clickable
+                    marker rather than disappearing. Hiding it would read as
+                    "the button is broken / where did it go" — a disabled
+                    control that says WHY is the clearer signal, and it keeps
+                    the released PDF (below) discoverable in the same place. */}
+                {bprDone ? (
+                  <span className="pd-action-btn is-done"
+                        title={`Released${bprStatus.supervisor_name ? ` by ${bprStatus.supervisor_name}` : ""}${bprStatus.completed_at ? ` on ${bprStatus.completed_at}` : ""} — this record is closed`}>
+                    {bprLabel}
+                  </span>
+                ) : (
+                  <a className="pd-action-btn primary" href={bprUrl}>{bprLabel}</a>
+                )}
+                {bprDone && bprStatus.pdf_drive_url && (
+                  <a className="pd-action-btn" href={bprStatus.pdf_drive_url}
+                     target="_blank" rel="noreferrer">
+                    📄 Released BPR PDF ↗
+                  </a>
+                )}
                 {b.folderURL && (
                   <a className="pd-action-btn" href={b.folderURL} target="_blank" rel="noreferrer">
                     📁 Batch Folder ↗
