@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from db import get_db
 from auth import require_admin
-from utils import now_utc, fmt_ts, _post_wash_gas, call_gas
+from utils import now_utc, fmt_ts, _post_wash_gas, call_gas, spawn_background
 
 router = APIRouter(tags=["components"])
 
@@ -1136,8 +1136,9 @@ async def close_wash_session(session_id: str, req: WashSessionClose):
             updated = dict(cur.fetchone())
         conn.commit()
 
-        import asyncio
-        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "wash", {
+        # spawn_background, not a bare create_task — see utils.py: a bare task
+        # here could be garbage-collected mid-flight, silently dropping the row.
+        spawn_background(_push_wash_session_row(updated["hash_lot_id"], "wash", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "equipment":    updated["equipment_id"] or "",
@@ -1148,7 +1149,7 @@ async def close_wash_session(session_id: str, req: WashSessionClose):
             "started_at":   fmt_ts(updated["started_at"]) or "",
             "completed_at": fmt_ts(updated["completed_at"]) or "",
             "notes":        updated["notes"] or "",
-        }))
+        }), label=f"wash session row {updated['hash_lot_id']}")
 
         return {"session": updated, "message": "Wash session corrected" if is_correction else "Wash session closed"}
     finally:
@@ -1330,8 +1331,8 @@ async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
             )
         conn.commit()
 
-        import asyncio
-        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "freezedry", {
+        # spawn_background, not a bare create_task — see utils.py.
+        spawn_background(_push_wash_session_row(updated["hash_lot_id"], "freezedry", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "equipment":    updated["equipment_id"] or "",
@@ -1342,7 +1343,7 @@ async def close_freezedry_session(session_id: str, req: FreezeDrySessionClose):
             "started_at":   fmt_ts(updated["started_at"]) or "",
             "completed_at": fmt_ts(updated["completed_at"]) or "",
             "notes":        updated["notes"] or "",
-        }))
+        }), label=f"freezedry session row {updated['hash_lot_id']}")
 
         return {"session": updated, "message": "Freeze-dry session corrected" if is_correction else "Freeze-dry session closed"}
     finally:
@@ -1554,8 +1555,9 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
                                 performed_by=req.corrected_by or updated["operator_name"])
         conn.commit()
 
-        import asyncio
-        asyncio.create_task(_push_wash_session_row(updated["hash_lot_id"], "sift", {
+        # spawn_background, not a bare create_task — see utils.py. This is the
+        # exact call behind the "wash BPR write-back (sifting) failed" lines.
+        spawn_background(_push_wash_session_row(updated["hash_lot_id"], "sift", {
             "session_num":  updated["session_num"],
             "operator":     updated["operator_name"],
             "fd_used":      fd_used,
@@ -1564,7 +1566,7 @@ async def close_sift_session(session_id: str, req: SiftSessionClose):
             "storage":      updated["storage_location"] or "",
             "completed_at": fmt_ts(updated["completed_at"]) or "",
             "notes":        updated["notes"] or "",
-        }))
+        }), label=f"sift session row {updated['hash_lot_id']}")
 
         return {"session": updated, "message": "Sift session corrected" if is_correction else "Sift session closed"}
     finally:

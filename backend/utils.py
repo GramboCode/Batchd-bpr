@@ -59,6 +59,65 @@ def describe_exc(e: BaseException) -> str:
     return f"{name}: {msg}" if msg else f"{name} (no message)"
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# BACKGROUND TASKS
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Strong references to in-flight fire-and-forget tasks.
+#
+# This set is not bookkeeping — it is load-bearing. From the asyncio docs on
+# create_task():
+#
+#   "Important: Save a reference to the result of this function, to avoid a
+#    task disappearing mid-execution. The event loop only keeps WEAK
+#    references to tasks. A task that isn't referenced elsewhere may get
+#    garbage-collected at any time, even before it's done."
+#
+# Every sheet write-back that was spawned with a bare `asyncio.create_task(...)`
+# and its result thrown away was therefore eligible for collection the moment
+# the request handler returned. When that happened the task was cancelled
+# mid-HTTP-request, the write silently never landed, and NOTHING was logged —
+# CancelledError is a BaseException, so the `except Exception` inside the
+# coroutine never saw it either.
+#
+# That is the mechanism behind "the CCPs and sanitation didn't write back":
+# not a mapping bug, not a bad cell reference — the request was killed in
+# flight. It's load-dependent and therefore intermittent, which is exactly how
+# it presented.
+_background_tasks: set = set()
+
+
+def spawn_background(coro, label: str):
+    """
+    Fire-and-forget a coroutine SAFELY: keeps a strong reference until it
+    finishes, and logs the outcome instead of discarding it.
+
+    Always use this instead of a bare asyncio.create_task() for work whose
+    result nobody awaits. Retrieving the exception in the done-callback also
+    suppresses asyncio's "Task exception was never retrieved" noise while
+    making the failure visible on purpose.
+    """
+    import asyncio
+
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+
+    def _done(t: "asyncio.Task"):
+        _background_tasks.discard(t)
+        if t.cancelled():
+            # Now impossible via GC (that's the point of the set above), but
+            # still reachable on shutdown — worth saying out loud rather than
+            # vanishing the way it used to.
+            print(f"background [{label}] was CANCELLED before completing")
+            return
+        exc = t.exception()
+        if exc is not None:
+            print(f"background [{label}] raised: {describe_exc(exc)}")
+
+    task.add_done_callback(_done)
+    return task
+
+
 async def _post_wash_gas(payload: dict, label: str):
     """
     Shared fire-and-forget POST to the GAS doPost webhook.

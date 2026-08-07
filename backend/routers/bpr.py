@@ -25,7 +25,10 @@ from pydantic import BaseModel
 import httpx
 
 from db import get_db
-from utils import now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists, describe_exc
+from utils import (
+    now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists, describe_exc,
+    spawn_background,
+)
 from bpr_phases import BPR_PHASES, detect_product_family
 # Component ledger helpers — reused so a BPR consuming a component lot decrements
 # inventory through the exact same ledger path the components router uses.
@@ -589,16 +592,18 @@ async def phase_signoff(uid: str, req: PhaseSignoffRequest):
             """, (rec["id"], req.phase_id))
             phase_steps = [dict(r) for r in cur2.fetchall()]
 
-        # Fire and forget — non-blocking, non-fatal
-        import asyncio
-        asyncio.create_task(push_phase_to_gas_bpr(
+        # Fire and forget — non-blocking, non-fatal — but via spawn_background,
+        # NOT a bare create_task. A bare task here was collectable the instant
+        # this handler returned, which silently killed Section 6 write-backs
+        # mid-flight. See spawn_background() in utils.py.
+        spawn_background(push_phase_to_gas_bpr(
             uid          = uid,
             phase_id     = req.phase_id,
             phase_def    = phase_def,
             signoff      = signoff,
             steps        = phase_steps,
             product_family = rec["product_family"]
-        ))
+        ), label=f"phase write-back {uid}/{req.phase_id}")
 
         return {
             "success": True,
@@ -1973,8 +1978,15 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         print(f"push_phase_to_gas_bpr: no mapped fields for phase {phase_id} [{product_family}]")
         return
 
+    import time as _time
+    _started = _time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        # 45s, matching _post_wash_gas. This is the Section 6 (steps + CCP)
+        # write-back and it was the TIGHTEST timeout in the system at 15s,
+        # despite doing the most work GAS-side: open the spreadsheet, then set
+        # up to ~5 cells per step across a whole phase. Nobody awaits this, so
+        # a generous ceiling costs nothing.
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
             resp = await client.post(webhook_url, json={
                 "action":      "writeBPRFieldsByCellMap",
                 "uid":         uid,
@@ -1982,9 +1994,17 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
                 "fields":      fields,
                 "secret":      os.environ.get("GAS_SHARED_SECRET", ""),
             })
-            print(f"GAS BPR write-back: {resp.status_code} — {resp.text[:200]}")
+            # Field count + phase in the success line too: GAS returns
+            # {success:true, written:N, missing:[...]} even when it wrote
+            # NOTHING because no field name matched the cell map, so "200 OK"
+            # alone never meant the data landed.
+            print(f"GAS BPR write-back [{uid}/{phase_id} {template_key}] "
+                  f"{len(fields)} fields: {resp.status_code} in "
+                  f"{_time.monotonic() - _started:.1f}s — {resp.text[:200]}")
     except Exception as e:
-        print(f"GAS BPR write-back failed (non-fatal) [uid={uid}]: {describe_exc(e)}")
+        print(f"GAS BPR write-back failed (non-fatal) after "
+              f"{_time.monotonic() - _started:.1f}s [uid={uid} phase={phase_id}]: "
+              f"{describe_exc(e)}")
 
 
 async def push_release_summary_bpr(rec: dict, supervisor_name: str, total_yield):
