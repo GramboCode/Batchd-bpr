@@ -309,6 +309,20 @@
 }
 .pd-action-btn.is-done:hover { border-color: #A7F3D0; color: #047857; }
 
+.pd-action-btn:disabled { opacity: 0.6; cursor: wait; }
+
+/* Resync result — wraps, since the failure text is a full sentence telling the
+   operator their data is safe. Truncating that would defeat the purpose. */
+.bd-resync-msg {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.bd-resync-msg.ok  { background: #ECFDF5; border-color: #A7F3D0; color: #047857; }
+.bd-resync-msg.bad { background: #FEF2F2; border-color: #FECACA; color: #B91C1C; }
+
 .pd-readonly-note {
   font-size: 0.8rem;
   color: #9CA3AF;

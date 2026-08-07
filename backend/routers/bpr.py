@@ -27,7 +27,7 @@ import httpx
 from db import get_db
 from utils import (
     now_utc, fmt_ts, _post_wash_gas, bpr_sheet_exists, describe_exc,
-    spawn_background,
+    spawn_background, call_gas,
 )
 from bpr_phases import BPR_PHASES, detect_product_family
 # Component ledger helpers — reused so a BPR consuming a component lot decrements
@@ -837,6 +837,109 @@ def _bpr_template_key_or_404(uid: str) -> tuple[dict, str]:
     return rec, template_key
 
 
+async def _push_fields(uid: str, template_key: str, fields: dict, label: str) -> bool:
+    """
+    Push a field->value map to the BPR sheet and report whether it ACTUALLY
+    landed. Returns True only on a GAS response that confirms a write.
+
+    _post_wash_gas is fire-and-forget and returns None regardless of outcome,
+    which is why every caller used to claim success unconditionally. This is
+    the variant for callers that must tell the operator the truth.
+
+    Note the two distinct failure modes folded into one bool:
+      - transport failed (timeout, unreachable) -> call_gas returns success:False
+      - transport fine but GAS wrote nothing, because no field name matched the
+        cell map -> {"success": true, "written": 0}. A 200 that changed no
+        cells is NOT a success, and treating it as one is how a silent
+        mapping mistake would look identical to a working write.
+    """
+    resp = await call_gas({
+        "action":      "writeBPRFieldsByCellMap",
+        "uid":         uid,
+        "templateKey": template_key,
+        "fields":      fields,
+    }, label)
+
+    if not resp.get("success"):
+        print(f"{label}: sheet write FAILED — {resp.get('error')}")
+        return False
+
+    written = resp.get("written")
+    if written == 0:
+        print(f"{label}: GAS returned success but wrote 0 cells "
+              f"(missing from cell map: {resp.get('missing')})")
+        return False
+
+    print(f"{label}: sheet write OK — {written} cells")
+    return True
+
+
+def _persist_sanitation(bpr_id, uid: str, entries, max_row: int) -> int:
+    """
+    Upsert Section 5 rows. One row per (bpr, row_num) so re-submitting a
+    surface CORRECTS it rather than appending a duplicate — the sheet has one
+    line per surface, and the DB has to model the same thing or a resync would
+    have to guess which of several rows is current.
+    """
+    conn = get_db()
+    saved = 0
+    try:
+        with conn.cursor() as cur:
+            for e in entries:
+                if not (1 <= e.row <= max_row):
+                    continue
+                if not (e.date and e.clean_start and e.clean_end and e.cleaned_by):
+                    continue     # untouched or incomplete — the caller already validated
+                cur.execute("""
+                    INSERT INTO bpr_sanitation_log
+                        (bpr_id, uid, row_num, date, clean_start, clean_end,
+                         ppm, strips_used, passed, cleaned_by, dry_before_use)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (bpr_id, row_num) DO UPDATE SET
+                        date = EXCLUDED.date,
+                        clean_start = EXCLUDED.clean_start,
+                        clean_end = EXCLUDED.clean_end,
+                        ppm = EXCLUDED.ppm,
+                        strips_used = EXCLUDED.strips_used,
+                        passed = EXCLUDED.passed,
+                        cleaned_by = EXCLUDED.cleaned_by,
+                        dry_before_use = EXCLUDED.dry_before_use,
+                        recorded_at = NOW()
+                """, (bpr_id, uid, e.row, e.date, e.clean_start, e.clean_end,
+                      e.ppm or "", e.strips_used or "", e.passed or "",
+                      e.cleaned_by, e.dry_before_use or ""))
+                saved += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return saved
+
+
+def _persist_equipment(bpr_id, uid: str, entries, max_row: int, default_time: str) -> int:
+    """Upsert Section 4 rows. Same one-row-per-position model as sanitation."""
+    conn = get_db()
+    saved = 0
+    try:
+        with conn.cursor() as cur:
+            for e in entries:
+                if not (1 <= e.row <= max_row) or not e.checked_by:
+                    continue
+                cur.execute("""
+                    INSERT INTO bpr_equipment_checks
+                        (bpr_id, uid, row_num, checked_by, check_time)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (bpr_id, row_num) DO UPDATE SET
+                        checked_by = EXCLUDED.checked_by,
+                        check_time = EXCLUDED.check_time,
+                        recorded_at = NOW()
+                """, (bpr_id, uid, e.row, e.checked_by, e.time or default_time))
+                saved += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return saved
+
+
 @router.post("/bpr/{uid}/sanitation")
 async def submit_bpr_sanitation(uid: str, req: SanitationLogRequest):
     """
@@ -878,15 +981,30 @@ async def submit_bpr_sanitation(uid: str, req: SanitationLogRequest):
     if not fields:
         raise HTTPException(400, "No sanitation entries provided")
 
-    await _post_wash_gas({
-        "action":      "writeBPRFieldsByCellMap",
-        "uid":         uid,
-        "templateKey": template_key,
-        "fields":      fields,
-    }, f"BPR sanitation log ({rec.get('product_family')})")
+    # ── 1. PERSIST FIRST ─────────────────────────────────────────────────
+    # The DB write is what "saved" means. Doing this before the sheet push is
+    # the whole point: the previous version pushed to Apps Script and stored
+    # nothing, so a failed push destroyed a §17210(c) record with no copy
+    # anywhere. If this INSERT raises, the operator gets a real error and can
+    # retry — far better than a false success over lost data.
+    saved_rows = _persist_sanitation(rec["id"], uid, req.entries, max_san)
 
-    return {"success": True, "rows_written": len(fields) // 8,
-            "message": "Sanitation log written to BPR sheet"}
+    # ── 2. THEN project onto the sheet ───────────────────────────────────
+    # Failure here is now recoverable: the data is in Postgres and
+    # POST /bpr/{uid}/resync-sheet can rebuild the sheet whenever.
+    sheet_ok = await _push_fields(uid, template_key, fields,
+                                  f"BPR sanitation log ({rec.get('product_family')})")
+
+    return {
+        "success": True,
+        "rows_written": saved_rows,
+        "sheet_written": sheet_ok,
+        "message": (
+            "Sanitation log saved and written to the BPR sheet" if sheet_ok else
+            "Sanitation log SAVED, but the sheet write failed — the data is safe "
+            "in BatchD; use 'Resync to sheet' to push it once the sheet is reachable."
+        ),
+    }
 
 
 @router.post("/bpr/{uid}/equipment")
@@ -914,15 +1032,179 @@ async def submit_bpr_equipment(uid: str, req: EquipmentCheckRequest):
     if not fields:
         raise HTTPException(400, "No equipment check-ins provided")
 
-    await _post_wash_gas({
-        "action":      "writeBPRFieldsByCellMap",
-        "uid":         uid,
-        "templateKey": template_key,
-        "fields":      fields,
-    }, f"BPR equipment check-in ({rec.get('product_family')})")
+    # Persist first, project second — same rationale as sanitation above.
+    saved_rows = _persist_equipment(rec["id"], uid, req.entries, max_equip, now_time)
 
-    return {"success": True, "rows_written": len(fields) // 2,
-            "message": "Equipment check-in written to BPR sheet"}
+    sheet_ok = await _push_fields(uid, template_key, fields,
+                                  f"BPR equipment check-in ({rec.get('product_family')})")
+
+    return {
+        "success": True,
+        "rows_written": saved_rows,
+        "sheet_written": sheet_ok,
+        "message": (
+            "Equipment check-in saved and written to the BPR sheet" if sheet_ok else
+            "Equipment check-in SAVED, but the sheet write failed — the data is safe "
+            "in BatchD; use 'Resync to sheet' to push it."
+        ),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /bpr/{uid}/resync-sheet
+# ─────────────────────────────────────────────────────────────────────────
+@router.post("/bpr/{uid}/resync-sheet")
+async def resync_sheet(uid: str):
+    """
+    Rebuild EVERY mapped cell on this BPR's sheet from the database.
+
+    WHY THIS EXISTS
+    ---------------
+    The sheet is a projection of Postgres, but it was only ever built
+    incrementally by fire-and-forget pushes at the moment each thing happened.
+    If a push failed — GC'd task, timeout, Apps Script hiccup, a deploy landing
+    mid-shift — that section stayed blank forever with no way to rebuild it.
+    This is that way.
+
+    Idempotent by construction: it writes the CURRENT state of every section,
+    so running it once and running it five times produce the same sheet. That's
+    what makes it safe to hand an operator a button for.
+
+    NOT A MERGE — it overwrites the mapped cells with what the database says.
+    Anything typed directly into a mapped cell in Sheets and never entered in
+    BatchD will be replaced. That's deliberate: the point of a resync is to
+    make the sheet agree with the system of record, and a merge would leave you
+    unable to say which one a given cell came from. Unmapped cells (the
+    template's own text, Section 7 notes, signatures) are never touched.
+
+    Only handles cell-mapped families. rosin_wash uses named ranges and a
+    different sheet entirely; it gets a clear 400 rather than a silent no-op.
+    """
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM bpr_records WHERE uid = %s", (uid,))
+            rec = cur.fetchone()
+            if not rec:
+                raise HTTPException(404, "BPR not found")
+            rec = dict(rec)
+
+            family = rec["product_family"]
+            if family == "rosin_wash":
+                raise HTTPException(400, {
+                    "message": "Resync isn't available for wash BPRs — they write to a "
+                               "different sheet via named ranges, not the standard cell map.",
+                    "product_family": family,
+                })
+
+            template_key = PRODUCT_FAMILY_TO_TEMPLATE_KEY.get(family)
+            if not template_key:
+                raise HTTPException(400, f"No cell-map template for family {family}")
+
+            definition = BPR_PHASES.get(family, {})
+
+            cur.execute("SELECT * FROM bpr_phase_signoffs WHERE uid = %s ORDER BY signed_at", (uid,))
+            signoffs = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT * FROM bpr_step_checks WHERE uid = %s ORDER BY phase_id, step_index", (uid,))
+            all_steps = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT * FROM bpr_sanitation_log WHERE uid = %s ORDER BY row_num", (uid,))
+            sanitation = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT * FROM bpr_equipment_checks WHERE uid = %s ORDER BY row_num", (uid,))
+            equipment = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                "SELECT * FROM bpr_component_consumption WHERE bpr_uid = %s ORDER BY created_at",
+                (uid,)
+            )
+            consumed = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    fields: dict = {}
+    sections: dict = {}
+
+    # ── Section 6 + 2 — every signed-off phase, rebuilt through the SAME
+    # builder the live write-back uses, so a resync can never disagree with it.
+    phase_defs = {p["id"]: p for p in definition.get("phases", [])}
+    phase_field_count = 0
+    for so in signoffs:
+        phase_def = phase_defs.get(so["phase_id"])
+        if not phase_def:
+            continue          # phase removed from the template since signing
+        phase_fields = build_phase_fields(
+            so["phase_id"], phase_def, so, all_steps, family
+        )
+        phase_field_count += len(phase_fields)
+        fields.update(phase_fields)
+    sections["steps_and_ccps"] = {"phases": len(signoffs), "fields": phase_field_count}
+
+    # ── Section 2 — consumed component lots
+    for c in consumed:
+        i = c.get("section_row")
+        if not i:
+            continue
+        fields[f"CANN{i}_LOTCOA"]    = c.get("lot_code") or ""
+        fields[f"CANN{i}_UID"]       = c.get("lot_code") or ""
+        fields[f"CANN{i}_ACTUALQTY"] = c.get("weight_g") or ""
+        fields[f"CANN{i}_WEIGHEDBY"] = c.get("recorded_by") or ""
+        fields[f"CANN{i}_TIME"]      = (fmt_ts(c.get("created_at")) or "")[-8:]
+    sections["cannabis_inputs"] = {"rows": len([c for c in consumed if c.get("section_row")])}
+
+    # ── Section 4 — equipment check-ins
+    for e in equipment:
+        fields[f"EQUIP{e['row_num']}_CHECKEDBY"] = e.get("checked_by") or ""
+        fields[f"EQUIP{e['row_num']}_TIME"]      = e.get("check_time") or ""
+    sections["equipment"] = {"rows": len(equipment)}
+
+    # ── Section 5 — sanitation log
+    for s in sanitation:
+        p = f"SAN{s['row_num']}"
+        fields[p + "_DATE"]         = s.get("date") or ""
+        fields[p + "_CLEANSTART"]   = s.get("clean_start") or ""
+        fields[p + "_CLEANEND"]     = s.get("clean_end") or ""
+        fields[p + "_PPM"]          = s.get("ppm") or ""
+        fields[p + "_STRIPSUSED"]   = s.get("strips_used") or ""
+        fields[p + "_PASS"]         = s.get("passed") or ""
+        fields[p + "_CLEANEDBY"]    = s.get("cleaned_by") or ""
+        fields[p + "_DRYBEFOREUSE"] = s.get("dry_before_use") or ""
+    sections["sanitation"] = {"rows": len(sanitation)}
+
+    # ── Section 3 — release yield, only once released
+    if rec.get("status") == "completed":
+        fields["YIELD1_ACTUAL"]   = rec.get("total_yield") or ""
+        fields["YIELD1_INITIALS"] = rec.get("supervisor_name") or ""
+        fields["YIELD1_TIME"]     = fmt_ts(rec.get("supervisor_at")) or ""
+        sections["yield"] = {"written": True}
+    else:
+        sections["yield"] = {"written": False, "reason": "not released yet"}
+
+    if not fields:
+        return {
+            "success": False,
+            "uid": uid,
+            "fields_sent": 0,
+            "sections": sections,
+            "message": "Nothing to resync — this BPR has no recorded data yet.",
+        }
+
+    ok = await _push_fields(uid, template_key, fields, f"BPR resync ({family})")
+
+    return {
+        "success": ok,
+        "uid": uid,
+        "product_family": family,
+        "template_key": template_key,
+        "fields_sent": len(fields),
+        "sections": sections,
+        "message": (
+            f"Sheet resynced from BatchD — {len(fields)} cells written." if ok else
+            "Resync FAILED to reach the BPR sheet. Nothing was lost — the data is "
+            "in BatchD; check that the batch record sheet exists, then try again."
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1885,13 +2167,40 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
         print(f"BPR write-back not yet implemented for {product_family} — skipping")
         return
 
+    fields = build_phase_fields(phase_id, phase_def, signoff, steps, product_family)
+
+    if not fields:
+        print(f"push_phase_to_gas_bpr: no mapped fields for phase {phase_id} [{product_family}]")
+        return
+
+    await _push_phase_fields(uid, template_key, fields, phase_id)
+
+
+def build_phase_fields(phase_id: str, phase_def: dict, signoff: dict,
+                       steps: list, product_family: str) -> dict:
+    """
+    Turn ONE signed-off phase into the {cell_field: value} map for its BPR
+    sheet. Pure — no I/O, no network — which is what lets the live write-back
+    and the resync endpoint share it.
+
+    Sharing it is the point. This is the same trap that produced the missing-QR
+    bug on the GAS side: two hand-copied implementations of one mapping that
+    drifted apart. A resync that rebuilt Section 6 from its own copy of this
+    logic would eventually write different cells than the live path, and the
+    disagreement would only surface as a wrong compliance document.
+
+    Three write categories per phase:
+      1. Timestamp fan-out — every sheet step a phase covers gets DATE/OP1/VERIFIED
+      2. CCP values — specific checklist numbers landing on one STEPn's VALUE
+      3. Cannabis-row values — writes into Section 2 (CANNn_*), not Section 6
+    """
     phase_to_steps = PHASE_TO_STEPS_MAPS.get(product_family, {})
     ccp_value_map  = CCP_VALUES_MAPS.get(product_family, {})
     cann_value_map = CANN_VALUES_MAPS.get(product_family, {})
 
     if not phase_to_steps:
         print(f"No PHASE_TO_STEPS map defined for {product_family} yet — skipping write-back")
-        return
+        return {}
 
     step_lookup = {s["step_index"]: s for s in steps if s["phase_id"] == phase_id}
     signed_at = fmt_ts(signoff.get("signed_at")) or ""
@@ -1974,8 +2283,14 @@ async def push_phase_to_gas_bpr(uid: str, phase_id: str, phase_def: dict,
             fields.setdefault("CANN1_VERIFIEDBY", _sd.get("checked_by") or employee)
         break
 
-    if not fields:
-        print(f"push_phase_to_gas_bpr: no mapped fields for phase {phase_id} [{product_family}]")
+    return fields
+
+
+async def _push_phase_fields(uid: str, template_key: str, fields: dict, phase_id: str):
+    """Ship one phase's field map to the sheet. Split out of
+    push_phase_to_gas_bpr so the field-building above stays pure."""
+    webhook_url = os.environ.get("GAS_WEBHOOK_URL")
+    if not webhook_url:
         return
 
     import time as _time

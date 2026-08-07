@@ -149,6 +149,10 @@ export default function BatchDetail() {
   // "Start BPR", "Continue BPR · 2/6 phases", or a disabled "BPR Released".
   const [bprStatus, setBprStatus] = useState(null);
 
+  // ── Sheet resync ──
+  const [resyncBusy, setResyncBusy] = useState(false);
+  const [resyncMsg, setResyncMsg] = useState(null);   // { text, ok }
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -189,6 +193,33 @@ export default function BatchDetail() {
     })();
     return () => { cancelled = true; };
   }, [batch]);
+
+  // Rebuild every mapped cell on the BPR sheet from what BatchD holds.
+  // The repair tool for any write-back that didn't land — the data is already
+  // in the database, this just re-projects it onto the sheet.
+  async function resyncSheet() {
+    const bprUid = bprUidFor(batch);
+    if (!bprUid) return;
+    setResyncBusy(true);
+    setResyncMsg(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/bpr/${encodeURIComponent(bprUid)}/resync-sheet`,
+        { method: "POST" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 400/404 detail may be an object (see the wash-family guard) or a string.
+        const d = json.detail;
+        throw new Error((d && d.message) || d || `Resync failed (${res.status})`);
+      }
+      setResyncMsg({ text: json.message || "Sheet resynced.", ok: !!json.success });
+    } catch (e) {
+      setResyncMsg({ text: e.message || "Resync failed.", ok: false });
+    } finally {
+      setResyncBusy(false);
+    }
+  }
 
   // Single write path for every edit. Sends only the changed field(s); the
   // backend returns the fresh batch, which we drop straight back into state
@@ -575,6 +606,22 @@ export default function BatchDetail() {
                   <a className="pd-action-btn" href={b.rndPDF} target="_blank" rel="noreferrer">
                     R&amp;D PDF ↗
                   </a>
+                )}
+                {/* Only offered once a BPR exists — there's nothing to project
+                    onto the sheet before that. Stays available AFTER release on
+                    purpose: a released BPR whose write-backs failed is exactly
+                    the case that needs repairing, and resync is read-only
+                    against the database. */}
+                {bprStatus?.exists && (
+                  <button className="pd-action-btn" onClick={resyncSheet} disabled={resyncBusy}
+                          title="Rewrite this BPR's sheet cells from the data stored in BatchD. Safe to run more than once.">
+                    {resyncBusy ? "⏳ Resyncing…" : "🔄 Resync to sheet"}
+                  </button>
+                )}
+                {resyncMsg && (
+                  <div className={`bd-resync-msg ${resyncMsg.ok ? "ok" : "bad"}`}>
+                    {resyncMsg.text}
+                  </div>
                 )}
                 <a className="pd-action-btn" href={`${EXTERNAL_LINKS.punchTools}?page=batch&uid=${encodeURIComponent(b.metrcUID)}`}
                    target="_blank" rel="noreferrer">

@@ -83,10 +83,55 @@ CREATE TABLE IF NOT EXISTS bpr_step_checks (
     UNIQUE(bpr_id, phase_id, step_index)
 );
 
+-- ── Section 5: Equipment & Surface Sanitation Log §17210(c) ──────────────
+-- Added 2026-08. Before this, the sanitation endpoint was WRITE-THROUGH ONLY:
+-- it took the operator's entries, POSTed them to Apps Script, and returned
+-- success. Nothing was persisted. So whenever that POST failed -- and it did,
+-- silently, for months -- the sanitation record didn't just miss the sheet, it
+-- ceased to exist. That's a §17210(c) record with no copy anywhere.
+--
+-- Postgres is now written FIRST and is the source of truth; the sheet is a
+-- projection that /bpr/{uid}/resync-sheet can rebuild at any time.
+--
+-- One row per (bpr, row number) -- re-submitting a row corrects it in place
+-- rather than appending, matching how the sheet behaves (one line per surface).
+CREATE TABLE IF NOT EXISTS bpr_sanitation_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bpr_id          UUID NOT NULL REFERENCES bpr_records(id) ON DELETE CASCADE,
+    uid             TEXT NOT NULL,
+    row_num         INT NOT NULL,          -- 1-10 standard, 1-11 nano; = SAN{n}
+    date            TEXT,
+    clean_start     TEXT,
+    clean_end       TEXT,
+    ppm             TEXT,
+    strips_used     TEXT,
+    passed          TEXT,
+    cleaned_by      TEXT,
+    dry_before_use  TEXT,
+    recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(bpr_id, row_num)
+);
+
+-- ── Section 4: Equipment & Processing Lines §17216(a)(6) ─────────────────
+-- Same story as sanitation above: write-through only, no persistence, no
+-- replay. Same fix.
+CREATE TABLE IF NOT EXISTS bpr_equipment_checks (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bpr_id          UUID NOT NULL REFERENCES bpr_records(id) ON DELETE CASCADE,
+    uid             TEXT NOT NULL,
+    row_num         INT NOT NULL,          -- 1-9 standard, 1-12 nano; = EQUIP{n}
+    checked_by      TEXT,
+    check_time      TEXT,
+    recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(bpr_id, row_num)
+);
+
 CREATE INDEX IF NOT EXISTS idx_bpr_uid ON bpr_records(uid);
 CREATE INDEX IF NOT EXISTS idx_bpr_metrc_uid ON bpr_records(metrc_uid);
 CREATE INDEX IF NOT EXISTS idx_signoffs_bpr ON bpr_phase_signoffs(bpr_id);
 CREATE INDEX IF NOT EXISTS idx_steps_bpr_phase ON bpr_step_checks(bpr_id, phase_id);
+CREATE INDEX IF NOT EXISTS idx_sanitation_bpr ON bpr_sanitation_log(bpr_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_bpr ON bpr_equipment_checks(bpr_id);
 
 -- ── Component type registry ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS bpr_component_types (
